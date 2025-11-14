@@ -75,12 +75,12 @@ module Tests = struct
   (* we want the bounds sorted [1+, 2+, 3+, ...] so that during deduplication
      the lowest possible bound is picked first *)
   let%test "compare_bounds" =
-    let input = [ [ mk_ls x y 1 ]; [ mk_ls x y 2 ] ] in
+    let input = [ [ mk_ls x y 1 [] ]; [ mk_ls x y 2 [] ] ] in
     input |> List.sort compare_bounds = input
 
   let%test "compare_bounds_2" =
-    let input = [ [ mk_dls z y u' v' 3 ]; [ mk_dls x y u v 2 ] ] in
-    let expected = [ [ mk_dls x y u v 2 ]; [ mk_dls z y u' v' 3 ] ] in
+    let input = [ [ mk_dls z y u' v' 3 [] ]; [ mk_dls x y u v 2 [] ] ] in
+    let expected = [ [ mk_dls x y u v 2 [] ]; [ mk_dls z y u' v' 3 [] ] ] in
     input |> List.sort compare_bounds = expected
 
   let%test "sl struct creation" =
@@ -113,7 +113,7 @@ module Tests = struct
     Solver.check_sat solver pto
 
   let%test "reachability split" =
-    let input = [ mk_ls x y 1; mk_ls y z 2; mk_ls z x' 2 ] in
+    let input = [ mk_ls x y 1 []; mk_ls y z 2 []; mk_ls z x' 2 [] ] in
     let result = split_by_reachability [ x ] input |> fst in
     assert_eq result input
 end

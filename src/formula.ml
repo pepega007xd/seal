@@ -5,21 +5,37 @@ open Common
     a set of functions for their manipulation *)
 
 type var = SL.Variable.t
-type ls = { first : var; next : var; min_len : int }
-type dls = { first : var; last : var; prev : var; next : var; min_len : int }
-type nls = { first : var; top : var; next : var; min_len : int }
+type fields = (string * var) list
+type ls = { first : var; next : var; min_len : int; shared : fields }
+
+type dls = {
+  first : var;
+  last : var;
+  prev : var;
+  next : var;
+  min_len : int;
+  shared : fields;
+}
+
+type nls = {
+  first : var;
+  top : var;
+  next : var;
+  min_len : int;
+  shared : fields;
+}
 
 type pto_target =
   | LS_t of var
   | DLS_t of var * var
   | NLS_t of var * var
-  | Generic of (string * var) list
+  | Generic
 
 type atom =
   | Eq of var list
   | Distinct of var * var
   | Freed of var
-  | PointsTo of var * pto_target
+  | PointsTo of var * pto_target * fields
   | LS of ls
   | DLS of dls
   | NLS of nls
@@ -52,15 +68,16 @@ let nondet = SL.Variable.mk "_nondet" int_sort
 
 (** Constructors *)
 
-let mk_ls (first : var) (next : var) (min_len : int) =
-  LS { first; next; min_len }
+let mk_ls (first : var) (next : var) (min_len : int) (shared : fields) =
+  LS { first; next; min_len; shared }
 
 let mk_dls (first : var) (last : var) (prev : var) (next : var) (min_len : int)
-    =
-  DLS { first; last; prev; next; min_len }
+    (shared : fields) =
+  DLS { first; last; prev; next; min_len; shared }
 
-let mk_nls (first : var) (top : var) (next : var) (min_len : int) =
-  NLS { first; top; next; min_len }
+let mk_nls (first : var) (top : var) (next : var) (min_len : int)
+    (shared : fields) =
+  NLS { first; top; next; min_len; shared }
 
 (** Formatters *)
 
@@ -71,28 +88,40 @@ let atom_to_string : atom -> 'a =
       SL.Variable.show var ^ ":" ^ sort
     else SL.Variable.show var
   in
+
+  let sh vars =
+    if List.is_empty vars then ""
+    else
+      let vars =
+        vars
+        |> List.map (fun (name, var) -> Format.sprintf "%s:%s" name (v var))
+        |> String.concat " "
+      in
+      " | {" ^ vars ^ "}"
+  in
+
   function
   | Eq vars ->
       vars |> List.map v |> String.concat " = " |> Format.sprintf "(%s)"
   | Distinct (lhs, rhs) -> Format.sprintf "(%s != %s)" (v lhs) (v rhs)
   | Freed var -> "freed(" ^ v var ^ ")"
-  | PointsTo (src, LS_t next) -> Format.sprintf "(%s -> %s)" (v src) (v next)
-  | PointsTo (src, DLS_t (next, prev)) ->
-      Format.sprintf "(%s -> n:%s,p:%s)" (v src) (v next) (v prev)
-  | PointsTo (src, NLS_t (top, next)) ->
-      Format.sprintf "(%s -> t:%s,n:%s)" (v src) (v top) (v next)
-  | PointsTo (src, Generic vars) ->
-      Format.sprintf "(%s -> {%s})" (v src)
-        (vars
-        |> List.map (fun (name, var) -> Format.sprintf "%s:%s" name (v var))
-        |> String.concat " ")
-  | LS ls -> Format.sprintf "ls_%d+(%s,%s)" ls.min_len (v ls.first) (v ls.next)
+  | PointsTo (src, LS_t next, shared) ->
+      Format.sprintf "(%s -> %s%s)" (v src) (v next) (sh shared)
+  | PointsTo (src, DLS_t (next, prev), shared) ->
+      Format.sprintf "(%s -> n:%s,p:%s%s)" (v src) (v next) (v prev) (sh shared)
+  | PointsTo (src, NLS_t (top, next), shared) ->
+      Format.sprintf "(%s -> t:%s,n:%s%s)" (v src) (v top) (v next) (sh shared)
+  | PointsTo (src, Generic, shared) ->
+      Format.sprintf "(%s -> %s)" (v src) (sh shared)
+  | LS ls ->
+      Format.sprintf "ls_%d+(%s,%s%s)" ls.min_len (v ls.first) (v ls.next)
+        (sh ls.shared)
   | DLS dls ->
-      Format.sprintf "dls_%d+(%s,%s,%s,%s)" dls.min_len (v dls.first)
-        (v dls.last) (v dls.prev) (v dls.next)
+      Format.sprintf "dls_%d+(%s,%s,%s,%s%s)" dls.min_len (v dls.first)
+        (sh dls.shared) (v dls.last) (v dls.prev) (v dls.next)
   | NLS nls ->
-      Format.sprintf "nls_%d+(%s,%s,%s)" nls.min_len (v nls.first) (v nls.top)
-        (v nls.next)
+      Format.sprintf "nls_%d+(%s,%s,%s%s)" nls.min_len (v nls.first) (v nls.top)
+        (sh nls.shared) (v nls.next)
   | IntEq (var, value) -> Format.sprintf "(%s = %i)" (v var) value
   | Ref (src, target) -> Format.sprintf "ref(%s,%s)" (v src) (v target)
 
@@ -128,18 +157,21 @@ let pp_bug_type (fmt : Format.formatter) (bug_type : bug_type) =
 (** Variables *)
 
 let get_vars (f : t) : var list =
+  let v = List.map snd in
   List.concat_map
     (function
       | Eq vars -> vars
       | Distinct (lhs, rhs) -> [ lhs; rhs ]
       | Freed var -> [ var ]
-      | PointsTo (src, LS_t next) -> [ src; next ]
-      | PointsTo (src, DLS_t (next, prev)) -> [ src; next; prev ]
-      | PointsTo (src, NLS_t (top, next)) -> [ src; next; top ]
-      | PointsTo (src, Generic vars) -> src :: List.map snd vars
-      | LS ls -> [ ls.first; ls.next ]
-      | DLS dls -> [ dls.first; dls.last; dls.prev; dls.next ]
-      | NLS nls -> [ nls.first; nls.top; nls.next ]
+      | PointsTo (src, LS_t next, shared) -> [ src; next ] @ v shared
+      | PointsTo (src, DLS_t (next, prev), shared) ->
+          [ src; next; prev ] @ v shared
+      | PointsTo (src, NLS_t (top, next), shared) ->
+          [ src; next; top ] @ v shared
+      | PointsTo (src, Generic, shared) -> src :: v shared
+      | LS ls -> [ ls.first; ls.next ] @ v ls.shared
+      | DLS dls -> [ dls.first; dls.last; dls.prev; dls.next ] @ v dls.shared
+      | NLS nls -> [ nls.first; nls.top; nls.next ] @ v nls.shared
       | IntEq (var, _) -> [ var ]
       | Ref (src, target) -> [ src; target ])
     f
@@ -149,19 +181,27 @@ let get_fresh_vars (f : t) : var list =
 
 let subsitute_in_atom (old_var : var) (new_var : var) : atom -> atom =
   let v (var : var) : var = if var = old_var then new_var else var in
+  let sh vars = vars |> List.map (fun (name, var) -> (name, v var)) in
 
   function
   | Eq vars -> Eq (List.map v vars)
   | Distinct (lhs, rhs) -> Distinct (v lhs, v rhs)
   | Freed var -> Freed (v var)
-  | PointsTo (src, LS_t next) -> PointsTo (v src, LS_t (v next))
-  | PointsTo (src, DLS_t (next, prev)) ->
-      PointsTo (v src, DLS_t (v next, v prev))
-  | PointsTo (src, NLS_t (top, next)) -> PointsTo (v src, NLS_t (v top, v next))
-  | PointsTo (src, Generic vars) ->
-      PointsTo
-        (v src, Generic (vars |> List.map (fun (name, var) -> (name, v var))))
-  | LS ls -> LS { first = v ls.first; next = v ls.next; min_len = ls.min_len }
+  | PointsTo (src, LS_t next, shared) ->
+      PointsTo (v src, LS_t (v next), sh shared)
+  | PointsTo (src, DLS_t (next, prev), shared) ->
+      PointsTo (v src, DLS_t (v next, v prev), sh shared)
+  | PointsTo (src, NLS_t (top, next), shared) ->
+      PointsTo (v src, NLS_t (v top, v next), sh shared)
+  | PointsTo (src, Generic, shared) -> PointsTo (v src, Generic, sh shared)
+  | LS ls ->
+      LS
+        {
+          first = v ls.first;
+          next = v ls.next;
+          min_len = ls.min_len;
+          shared = sh ls.shared;
+        }
   | DLS dls ->
       DLS
         {
@@ -170,6 +210,7 @@ let subsitute_in_atom (old_var : var) (new_var : var) : atom -> atom =
           prev = v dls.prev;
           next = v dls.next;
           min_len = dls.min_len;
+          shared = sh dls.shared;
         }
   | NLS nls ->
       NLS
@@ -178,6 +219,7 @@ let subsitute_in_atom (old_var : var) (new_var : var) : atom -> atom =
           top = v nls.top;
           next = v nls.next;
           min_len = nls.min_len;
+          shared = sh nls.shared;
         }
   | IntEq (lhs, value) -> IntEq (v lhs, value)
   | Ref (src, target) -> Ref (v src, v target)
@@ -244,14 +286,14 @@ let is_spatial_atom : atom -> bool = function
 let get_spatial_atoms : t -> t = List.filter is_spatial_atom
 
 let is_spatial_source (src : var) : atom -> bool = function
-  | PointsTo (var, _) -> src = var
+  | PointsTo (var, _, _) -> src = var
   | LS ls -> ls.first = src
   | DLS dls -> dls.first = src || dls.last = src
   | NLS nls -> nls.first = src
   | _ -> false
 
 let is_spatial_source_first (src : var) : atom -> bool = function
-  | PointsTo (var, _) -> src = var
+  | PointsTo (var, _, _) -> src = var
   | LS ls -> ls.first = src
   | DLS dls -> dls.first = src
   | NLS nls -> nls.first = src
@@ -286,12 +328,12 @@ let get_spatial_atom_from (src : var) (f : t) : atom =
 
 let get_target_of_atom (field : Types.field_type) (atom : atom) : var =
   match (atom, field) with
-  | PointsTo (_, LS_t next), Next -> next
-  | PointsTo (_, DLS_t (next, _)), Next -> next
-  | PointsTo (_, DLS_t (_, prev)), Prev -> prev
-  | PointsTo (_, NLS_t (top, _)), Top -> top
-  | PointsTo (_, NLS_t (_, next)), Next -> next
-  | PointsTo (_, Generic vars), Other field -> List.assoc field vars
+  | PointsTo (_, LS_t next, _), Next -> next
+  | PointsTo (_, DLS_t (next, _), _), Next -> next
+  | PointsTo (_, DLS_t (_, prev), _), Prev -> prev
+  | PointsTo (_, NLS_t (top, _), _), Top -> top
+  | PointsTo (_, NLS_t (_, next), _), Next -> next
+  | PointsTo (_, _, shared), Other field -> List.assoc field shared
   | LS ls, Next -> ls.next
   | DLS dls, Next -> dls.next
   | DLS dls, Prev -> dls.prev
@@ -299,20 +341,17 @@ let get_target_of_atom (field : Types.field_type) (atom : atom) : var =
   | NLS nls, Next -> nls.next
   | _ -> assert false
 
-let get_targets_of_atom : atom -> var list = function
-  | PointsTo (_, LS_t next) -> [ next ]
-  | PointsTo (_, DLS_t (next, prev)) -> [ next; prev ]
-  | PointsTo (_, NLS_t (top, next)) -> [ top; next ]
-  | PointsTo (_, Generic vars) -> List.map snd vars
-  | LS ls -> [ ls.next ]
-  | DLS dls -> [ dls.prev; dls.next ]
-  | NLS nls -> [ nls.top; nls.next ]
+let get_targets_of_atom : atom -> var list =
+  let v = List.map snd in
+  function
+  | PointsTo (_, LS_t next, shared) -> [ next ] @ v shared
+  | PointsTo (_, DLS_t (next, prev), shared) -> [ next; prev ] @ v shared
+  | PointsTo (_, NLS_t (top, next), shared) -> [ top; next ] @ v shared
+  | PointsTo (_, Generic, shared) -> v shared
+  | LS ls -> [ ls.next ] @ v ls.shared
+  | DLS dls -> [ dls.prev; dls.next ] @ v dls.shared
+  | NLS nls -> [ nls.top; nls.next ] @ v nls.shared
   | _ -> assert false
-
-let is_spatial_target (target : var) (f : t) : bool =
-  f |> get_spatial_atoms
-  |> List.exists (fun atom ->
-      get_targets_of_atom atom |> List.exists (fun var -> is_eq target var f))
 
 let get_spatial_target (src : var) (field : Types.field_type) (f : t) : var =
   get_spatial_atom_from_opt src f |> function
@@ -332,23 +371,26 @@ let remove_spatial_from (src : var) (f : t) : t =
 let change_pto_target (src : var) (field : Types.field_type) (new_target : var)
     (f : t) : t =
   let f = make_var_explicit_src src f in
-  let old_struct =
-    match get_spatial_atom_from src f with
-    | PointsTo (_, old_struct) -> old_struct
+  let new_pto =
+    match (field, get_spatial_atom_from src f) with
+    | Next, PointsTo (src, LS_t _, shared) ->
+        PointsTo (src, LS_t new_target, shared)
+    | Next, PointsTo (src, DLS_t (_, prev), shared) ->
+        PointsTo (src, DLS_t (new_target, prev), shared)
+    | Next, PointsTo (src, NLS_t (top, _), shared) ->
+        PointsTo (src, NLS_t (top, new_target), shared)
+    | Prev, PointsTo (src, DLS_t (next, _), shared) ->
+        PointsTo (src, DLS_t (next, new_target), shared)
+    | Top, PointsTo (src, NLS_t (_, next), shared) ->
+        PointsTo (src, NLS_t (new_target, next), shared)
+    | Other field, PointsTo (src, target, shared)
+      when List.mem_assoc field shared ->
+        let shared = List.remove_assoc field shared in
+        PointsTo (src, target, (field, new_target) :: shared)
     | _ -> assert false
   in
-  let new_struct =
-    match (field, old_struct) with
-    | Next, LS_t _ -> LS_t new_target
-    | Next, DLS_t (_, prev) -> DLS_t (new_target, prev)
-    | Next, NLS_t (top, _) -> NLS_t (top, new_target)
-    | Prev, DLS_t (next, _) -> DLS_t (next, new_target)
-    | Top, NLS_t (_, next) -> NLS_t (new_target, next)
-    | Other field, Generic vars ->
-        Generic ((field, new_target) :: List.remove_assoc field vars)
-    | _ -> assert false
-  in
-  f |> remove_spatial_from src |> add_atom (PointsTo (src, new_struct))
+  (* let new_shared = List.remove_assoc  *)
+  f |> remove_spatial_from src |> add_atom new_pto
 
 let get_spatial_atom_min_length : atom -> int = function
   | LS ls -> ls.min_len
@@ -361,10 +403,12 @@ let assert_allocated (var : var) (f : t) : unit =
   ignore @@ get_spatial_atom_from var f
 
 let pto_to_list : atom -> atom = function
-  | PointsTo (first, LS_t next) -> LS { first; next; min_len = 1 }
-  | PointsTo (src, DLS_t (next, prev)) ->
-      DLS { first = src; last = src; next; prev; min_len = 1 }
-  | PointsTo (first, NLS_t (top, next)) -> NLS { first; top; next; min_len = 1 }
+  | PointsTo (first, LS_t next, shared) ->
+      LS { first; next; min_len = 1; shared }
+  | PointsTo (src, DLS_t (next, prev), shared) ->
+      DLS { first = src; last = src; next; prev; min_len = 1; shared }
+  | PointsTo (first, NLS_t (top, next), shared) ->
+      NLS { first; top; next; min_len = 1; shared }
   | other -> other
 
 (** Pure atoms *)
@@ -491,43 +535,47 @@ let rec materialize (var : var) (f : t) : t list =
   | LS ls when ls.min_len > 0 ->
       [
         f
-        |> add_atom (PointsTo (var, LS_t fresh_var))
-        |> add_atom @@ mk_ls fresh_var ls.next (ls.min_len - 1);
+        |> add_atom (PointsTo (var, LS_t fresh_var, ls.shared))
+        |> add_atom @@ mk_ls fresh_var ls.next (ls.min_len - 1) ls.shared;
       ]
   (* ls has minimum length equal to zero -> case split to 0 and 1+ *)
   | LS ls ->
       (* case where ls has length 1+ *)
       (f
-      |> add_atom (PointsTo (var, LS_t fresh_var))
-      |> add_atom @@ mk_ls fresh_var ls.next 0)
+      |> add_atom (PointsTo (var, LS_t fresh_var, ls.shared))
+      |> add_atom @@ mk_ls fresh_var ls.next 0 ls.shared)
       (* cases where ls has length 0 *)
       :: (f |> add_eq ls.first ls.next |> materialize var)
   (* cases where DLS has minimum length of at least one *)
   | DLS dls when dls.min_len > 0 && var = dls.first ->
       [
         f
-        |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev)))
-        |> add_atom @@ mk_dls fresh_var dls.last var dls.next (dls.min_len - 1);
+        |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev), dls.shared))
+        |> add_atom
+           @@ mk_dls fresh_var dls.last var dls.next (dls.min_len - 1)
+                dls.shared;
       ]
   | DLS dls when dls.min_len > 0 && var = dls.last ->
       [
         f
-        |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var)))
-        |> add_atom @@ mk_dls dls.first fresh_var dls.prev var (dls.min_len - 1);
+        |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var), dls.shared))
+        |> add_atom
+           @@ mk_dls dls.first fresh_var dls.prev var (dls.min_len - 1)
+                dls.shared;
       ]
   (* cases where DLS has minimum length of zero -> case split *)
   | DLS dls when var = dls.first ->
       (* length 1+ case *)
       (f
-      |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev)))
-      |> add_atom @@ mk_dls fresh_var dls.last var dls.next 0)
+      |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev), dls.shared))
+      |> add_atom @@ mk_dls fresh_var dls.last var dls.next 0 dls.shared)
       (* length 0 cases *)
       :: (f |> add_eq dls.first dls.next |> add_eq dls.last dls.prev
         |> materialize var)
   | DLS dls when var = dls.last ->
       (f
-      |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var)))
-      |> add_atom @@ mk_dls dls.first fresh_var dls.prev var 0)
+      |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var), dls.shared))
+      |> add_atom @@ mk_dls dls.first fresh_var dls.prev var 0 dls.shared)
       :: (f |> add_eq dls.first dls.next |> add_eq dls.last dls.prev
         |> materialize var)
   (* case where NLS has minimum length of at least one *)
@@ -536,18 +584,19 @@ let rec materialize (var : var) (f : t) : t list =
       let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
       [
         f
-        |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls)))
-        |> add_atom @@ mk_ls fresh_ls nls.next 0
-        |> add_atom @@ mk_nls fresh_var nls.top nls.next (nls.min_len - 1);
+        |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls), nls.shared))
+        |> add_atom @@ mk_ls fresh_ls nls.next 0 []
+        |> add_atom
+           @@ mk_nls fresh_var nls.top nls.next (nls.min_len - 1) nls.shared;
       ]
   (* case where NLS has minimum length == 0 *)
   | NLS nls ->
       let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
       (* length 1+ case *)
       (f
-      |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls)))
-      |> add_atom @@ mk_ls fresh_ls nls.next 0
-      |> add_atom @@ mk_nls fresh_var nls.top nls.next 0)
+      |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls), nls.shared))
+      |> add_atom @@ mk_ls fresh_ls nls.next 0 []
+      |> add_atom @@ mk_nls fresh_var nls.top nls.next 0 nls.shared)
       (* length 0 cases *)
       :: (f |> add_eq nls.first nls.top |> materialize var)
   | _ -> assert false

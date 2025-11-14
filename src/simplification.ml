@@ -58,7 +58,7 @@ let remove_leaks (formula : Formula.t) : Formula.t =
   let junk_atoms, valid_atoms =
     List.partition
       (function
-        | Formula.PointsTo (src, _) -> is_fresh_unique src
+        | Formula.PointsTo (src, _, _) -> is_fresh_unique src
         | Formula.LS ls -> is_fresh_unique ls.first
         | Formula.DLS dls ->
             is_fresh_unique dls.first && is_fresh_unique dls.last
