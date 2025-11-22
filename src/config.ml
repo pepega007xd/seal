@@ -44,19 +44,6 @@ module Backend_solver = Self.Enum (struct
   let values = AstralConfig.Backend.values_with_names
 end)
 
-module Astral_mode = Self.Enum (struct
-  let option_name = "-seal-astral-mode"
-
-  let help =
-    "Old == builtin predicate encoding, New == user defined predicates \
-     (default)"
-
-  type t = [ `Old | `New ]
-
-  let default = `New
-  let values = [ (`Old, "old"); (`New, "new") ]
-end)
-
 module Astral_encoding = Self.Enum (struct
   let option_name = "-seal-astral-encoding"
   let help = "Which location encoding should Astral use, default: Bitvectors"

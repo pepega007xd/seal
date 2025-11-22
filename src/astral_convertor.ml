@@ -23,19 +23,21 @@ let init ~backend ~encoding ~dump_queries () =
     ~use_builtin_defs:false ~source:"seal" ()
   |> Solver.add_heap_sort heap_sort
 
-let[@warning "-8"] convert f =
+let convert f =
   let v = SL.Term.of_var in
   let map_atom = function
     | Eq vars -> SL.mk_eq (List.map v vars)
     | Distinct (lhs, rhs) -> SL.mk_distinct2 (v lhs) (v rhs)
     | Freed var -> SL_builtins.mk_freed (v var)
-    | PointsTo (src, LS_t next) -> SL_builtins.mk_pto_ls (v src) ~next:(v next)
-    | PointsTo (src, DLS_t (next, prev)) ->
+    (* TODO: *)
+    | PointsTo (src, LS_t next, shared) ->
+        SL_builtins.mk_pto_ls (v src) ~next:(v next)
+    | PointsTo (src, DLS_t (next, prev), shared) ->
         SL_builtins.mk_pto_dls (v src) ~next:(v next) ~prev:(v prev)
-    | PointsTo (src, NLS_t (top, next)) ->
+    | PointsTo (src, NLS_t (top, next), shared) ->
         SL_builtins.mk_pto_nls (v src) ~top:(v top) ~next:(v next)
-    | PointsTo (src, Generic vars) ->
-        let vars = vars |> List.map snd |> List.map v in
+    | PointsTo (src, Generic, shared) ->
+        let vars = shared |> List.map snd |> List.map v in
         let struct_def = Types.get_struct_def @@ SL.Variable.get_sort src in
         SL.mk_pto_struct (v src) struct_def vars
     | LS ls -> (
@@ -114,3 +116,5 @@ let[@warning "-8"] convert f =
         SL.mk_pto_struct (v src) struct_def [ v target ]
   in
   SL.mk_star (List.map map_atom f)
+
+let convert_state state = List.map convert state |> SL.mk_or
