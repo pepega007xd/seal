@@ -119,6 +119,7 @@ let convert_to_dls (formula : Formula.t) : Formula.t =
     new [next] var if join succeeded *)
 let unify_sublists (lhs_source : Formula.var) (rhs_source : Formula.var)
     (formula : Formula.t) : (Formula.t * Formula.var) option =
+  (* TODO: check that sublists have the same shared fields? *)
   let lhs = Formula.get_spatial_atom_from lhs_source formula in
   let rhs = Formula.get_spatial_atom_from rhs_source formula in
 

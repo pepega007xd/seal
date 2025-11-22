@@ -32,33 +32,27 @@ let call (lhs_sort : SL.Sort.t) (func : Cil_types.varinfo)
   let get_allocation (init_vars_to_null : bool) =
     let lhs = SL.Variable.mk_fresh "func_ret" lhs_sort in
     let pto =
-      let fresh_from_lhs () =
-        if init_vars_to_null then Formula.nil
-        else SL.Variable.mk_fresh "fresh" lhs_sort
+      let fields =
+        Types.get_struct_def lhs_sort |> MemoryModel.StructDef.get_fields
       in
-      match () with
-      | _ when lhs_sort = SL_builtins.loc_ls || lhs_sort = SL.Sort.loc_nil ->
-          Formula.PointsTo (lhs, LS_t (fresh_from_lhs ()))
-      | _ when lhs_sort = SL_builtins.loc_dls ->
-          Formula.PointsTo (lhs, DLS_t (fresh_from_lhs (), fresh_from_lhs ()))
-      | _ when lhs_sort = SL_builtins.loc_nls ->
-          Formula.PointsTo
-            ( lhs,
-              NLS_t (fresh_from_lhs (), SL.Variable.mk_fresh "fresh" Sort.loc_ls)
-            )
-      | _ ->
-          let fields =
-            Types.get_struct_def lhs_sort |> MemoryModel.StructDef.get_fields
-          in
-          let names = List.map MemoryModel.Field.show fields in
-          let vars =
-            if init_vars_to_null then List.map (fun _ -> Formula.nil) fields
-            else
-              List.map MemoryModel.Field.get_sort fields
-              |> List.map (SL.Variable.mk_fresh (SL.Variable.get_name lhs))
-          in
-          Formula.PointsTo (lhs, Generic (List.combine names vars))
+      let names = List.map MemoryModel.Field.show fields in
+      let vars =
+        if init_vars_to_null then List.map (fun _ -> Formula.nil) fields
+        else
+          List.map MemoryModel.Field.get_sort fields
+          |> List.map (SL.Variable.mk_fresh (SL.Variable.get_name lhs))
+      in
+      let fields = List.combine names vars in
+
+      match (Types.get_list_type lhs_sort, fields) with
+      | Sll _, next :: shared -> Formula.PointsTo (lhs, LS_t (snd next), shared)
+      | Dll _, prev :: next :: shared ->
+          Formula.PointsTo (lhs, DLS_t (snd prev, snd next), shared)
+      | Nl _, top :: next :: shared ->
+          Formula.PointsTo (lhs, NLS_t (snd top, snd next), shared)
+      | _ -> Formula.PointsTo (lhs, Generic, fields)
     in
+
     let allocation = formula |> Formula.add_atom pto in
     if Config.Svcomp_mode.get () then ([ allocation ], [ lhs ])
     else

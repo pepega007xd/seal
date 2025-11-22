@@ -261,21 +261,25 @@ module Tests = struct
     assert_eq (List.sort_uniq compare input) expected
 
   let%test "join_1" =
-    let input = [ [ PointsTo (x, LS_t y') ]; [ PointsTo (x, LS_t z') ] ] in
-    let expected = [ [ PointsTo (x, LS_t y') ] ] in
+    let input =
+      [ [ PointsTo (x, LS_t y', []) ]; [ PointsTo (x, LS_t z', []) ] ]
+    in
+    let expected = [ [ PointsTo (x, LS_t y', []) ] ] in
     let joined = deduplicate_formulas input in
     assert_eq_state joined expected
 
   let%test "join_2" =
-    let input = [ [ PointsTo (x, LS_t y) ]; [ PointsTo (x, LS_t z) ] ] in
+    let input =
+      [ [ PointsTo (x, LS_t y, []) ]; [ PointsTo (x, LS_t z, []) ] ]
+    in
     let joined = deduplicate_formulas input in
     assert_eq_state joined input
 
   let%test "join_ls" =
     List.init 3 Fun.id
     |> List.for_all (fun len ->
-           let input = [ [ mk_ls x y' len ]; [ mk_ls x z' len ] ] in
-           let expected = [ [ mk_ls x y' len ] ] in
+           let input = [ [ mk_ls x y' len [] ]; [ mk_ls x z' len [] ] ] in
+           let expected = [ [ mk_ls x y' len [] ] ] in
            let joined = deduplicate_formulas input in
            assert_eq_state joined expected)
 end

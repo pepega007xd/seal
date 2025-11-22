@@ -18,8 +18,14 @@ let init () =
   in
   let backend = Config.Backend_solver.get () in
   let encoding = Config.Astral_encoding.get () in
-  Common.solver :=
-    Some (Astral_convertor.init ~dump_queries ~backend ~encoding ())
+
+  let open SL_builtins in
+  let solver =
+    Solver.init ~dump_queries ~backend ~encoding ~quantifier_encoding:`Direct
+      ~use_builtin_defs:false ~source:"seal" ()
+  in
+  Common.solver := Some solver;
+  Freed.register ()
 
 let check_sat (formula : Formula.t) : bool =
   let astral_formula = Astral_convertor.convert formula in

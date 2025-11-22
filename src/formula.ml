@@ -26,8 +26,11 @@ type nls = {
 }
 
 type pto_target =
+  (* next *)
   | LS_t of var
+  (* next, prev *)
   | DLS_t of var * var
+  (* top, next *)
   | NLS_t of var * var
   | Generic
 
@@ -118,10 +121,10 @@ let atom_to_string : atom -> 'a =
         (sh ls.shared)
   | DLS dls ->
       Format.sprintf "dls_%d+(%s,%s,%s,%s%s)" dls.min_len (v dls.first)
-        (sh dls.shared) (v dls.last) (v dls.prev) (v dls.next)
+        (v dls.last) (v dls.prev) (v dls.next) (sh dls.shared)
   | NLS nls ->
       Format.sprintf "nls_%d+(%s,%s,%s%s)" nls.min_len (v nls.first) (v nls.top)
-        (sh nls.shared) (v nls.next)
+        (v nls.next) (sh nls.shared)
   | IntEq (var, value) -> Format.sprintf "(%s = %i)" (v var) value
   | Ref (src, target) -> Format.sprintf "ref(%s,%s)" (v src) (v target)
 
@@ -387,6 +390,7 @@ let change_pto_target (src : var) (field : Types.field_type) (new_target : var)
       when List.mem_assoc field shared ->
         let shared = List.remove_assoc field shared in
         PointsTo (src, target, (field, new_target) :: shared)
+    | Next, _ -> fail "AAAAAAAAAA"
     | _ -> assert false
   in
   (* let new_shared = List.remove_assoc  *)
@@ -581,7 +585,10 @@ let rec materialize (var : var) (f : t) : t list =
   (* case where NLS has minimum length of at least one *)
   | NLS nls when nls.min_len > 0 ->
       (* materalization of NLS produces a LS_0+ from fresh_var to `nls.next` *)
-      let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
+      let sort = SL.Variable.get_sort nls.first in
+      let fresh_ls =
+        SL.Variable.mk_fresh "fresh" (Types.get_next_sort_of_nls sort)
+      in
       [
         f
         |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls), nls.shared))
@@ -591,7 +598,10 @@ let rec materialize (var : var) (f : t) : t list =
       ]
   (* case where NLS has minimum length == 0 *)
   | NLS nls ->
-      let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
+      let sort = SL.Variable.get_sort nls.first in
+      let fresh_ls =
+        SL.Variable.mk_fresh "fresh" (Types.get_next_sort_of_nls sort)
+      in
       (* length 1+ case *)
       (f
       |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls), nls.shared))

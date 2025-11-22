@@ -3,82 +3,70 @@ open SL_builtins
 open Astral.Lists
 open Formula
 
-(** TODO: do not used SID directly *)
-let init ~backend ~encoding ~dump_queries () =
-  GlobalSID.register_user_defined ls;
-  GlobalSID.register_user_defined dls;
-  GlobalSID.register_user_defined nls;
-  Freed.register ();
+let v = SL.Term.of_var
 
-  let open SL_builtins in
-  let heap_sort =
-    HeapSort.of_list
-      [
-        (loc_ls, LS.struct_ls);
-        (loc_dls, DLS.struct_dls);
-        (loc_nls, NLS.struct_nls);
-      ]
-  in
-  Solver.init ~dump_queries ~backend ~encoding ~quantifier_encoding:`Direct
-    ~use_builtin_defs:false ~source:"seal" ()
-  |> Solver.add_heap_sort heap_sort
+let mk_pto src vars shared =
+  let vars = vars |> List.map v in
+  let shared = shared |> List.map snd |> List.map v in
+  let struct_def = Types.get_struct_def @@ SL.Variable.get_sort src in
+  SL.mk_pto_struct (v src) struct_def (vars @ shared)
+
+let mk_predicate sort vars shared =
+  let shared = shared |> List.map snd |> List.map v in
+  let struct_def = Types.get_struct_def sort in
+  let name = MemoryModel.StructDef.get_name struct_def in
+  SL.mk_predicate name (vars @ shared)
+
+let get_name v = SL.Variable.get_sort v |> Sort.name
 
 let convert f =
-  let v = SL.Term.of_var in
   let map_atom = function
     | Eq vars -> SL.mk_eq (List.map v vars)
     | Distinct (lhs, rhs) -> SL.mk_distinct2 (v lhs) (v rhs)
     | Freed var -> SL_builtins.mk_freed (v var)
-    (* TODO: *)
-    | PointsTo (src, LS_t next, shared) ->
-        SL_builtins.mk_pto_ls (v src) ~next:(v next)
+    | PointsTo (src, LS_t next, shared) -> mk_pto src [ next ] shared
     | PointsTo (src, DLS_t (next, prev), shared) ->
-        SL_builtins.mk_pto_dls (v src) ~next:(v next) ~prev:(v prev)
+        mk_pto src [ next; prev ] shared
     | PointsTo (src, NLS_t (top, next), shared) ->
-        SL_builtins.mk_pto_nls (v src) ~top:(v top) ~next:(v next)
-    | PointsTo (src, Generic, shared) ->
-        let vars = shared |> List.map snd |> List.map v in
-        let struct_def = Types.get_struct_def @@ SL.Variable.get_sort src in
-        SL.mk_pto_struct (v src) struct_def vars
+        mk_pto src [ top; next ] shared
+    | PointsTo (src, Generic, shared) -> mk_pto src [] shared
     | LS ls -> (
+        let sort = SL.Variable.get_sort ls.first in
         let first = v ls.first in
         let next = v ls.next in
 
-        let ls_0 = SL_builtins.mk_ls first ~sink:next in
+        let ls_0 = mk_predicate sort [ first; next ] ls.shared in
         let ls_1 = SL.mk_star [ ls_0; SL.mk_distinct2 first next ] in
         let ls_2 =
-          let n = SL.Term.mk_fresh_var "n" loc_ls in
-          (*SL.mk_exists' [loc_ls] (fun [n] ->*)
+          let n = SL.Term.mk_fresh_var "n" sort in
           SL.mk_star
             [
-              SL_builtins.mk_pto_ls first ~next:n;
-              SL.mk_predicate "ls" [ n; next ];
+              mk_pto ls.first [ SL.Term.as_var n ] ls.shared;
+              mk_predicate sort [ n; next ] ls.shared;
               SL.mk_distinct [ first; n; next ];
             ]
-          (* ) *)
         in
         match ls.min_len with 0 -> ls_0 | 1 -> ls_1 | _ -> ls_2)
     | DLS dls -> (
+        let sort = SL.Variable.get_sort dls.first in
         let first = v dls.first in
         let last = v dls.last in
         let prev = v dls.prev in
         let next = v dls.next in
 
-        let dls_0 = SL.mk_predicate "dls" [ first; next; last; prev ] in
+        let dls_0 = mk_predicate sort [ first; last; prev; next ] dls.shared in
         let dls_1 = SL.mk_star [ dls_0; SL.mk_distinct2 first next ] in
         let dls_2 = SL.mk_star [ dls_1; SL.mk_distinct2 first last ] in
         let dls_3 =
-          let n = SL.Term.mk_fresh_var "n" loc_dls in
-          (*SL.mk_exists' [loc_dls] (fun [n] ->*)
+          let n = SL.Term.mk_fresh_var "n" (SL.Term.get_sort first) in
           SL.mk_star
             [
-              SL_builtins.mk_pto_dls first ~next:n ~prev;
-              SL.mk_predicate "dls" [ n; next; last; first ];
+              mk_pto dls.first [ dls.prev; SL.Term.as_var n ] dls.shared;
+              mk_predicate sort [ n; last; first; next ] dls.shared;
               SL.mk_distinct2 n next;
               SL.mk_distinct2 last first;
               SL.mk_distinct2 first next;
             ]
-          (* ) *)
         in
 
         match dls.min_len with
@@ -87,23 +75,24 @@ let convert f =
         | 2 -> dls_2
         | _ -> dls_3)
     | NLS nls -> (
+        let sort = SL.Variable.get_sort nls.first in
+        let next_sort = Types.get_next_sort_of_nls sort in
         let first = v nls.first in
         let top = v nls.top in
         let next = v nls.next in
-        let nls_0 = SL_builtins.mk_nls first ~sink:top ~bottom:next in
+        let nls_0 = mk_predicate sort [ first; top; next ] nls.shared in
         let nls_1 = SL.mk_star [ nls_0; SL.mk_distinct2 first top ] in
         let nls_2 =
-          let t = SL.Term.mk_fresh_var "t" loc_nls in
-          let n = SL.Term.mk_fresh_var "n" loc_ls in
-          (*SL.mk_exists' [loc_nls; loc_ls] (fun [t; n] ->*)
+          let t = SL.Term.mk_fresh_var "t" sort in
+          let n = SL.Term.mk_fresh_var "n" next_sort in
           SL.mk_star
             [
-              SL_builtins.mk_pto_nls first ~top:t ~next:n;
-              SL.mk_predicate "nls" [ t; top; next ];
-              SL.mk_predicate "ls" [ n; next ];
+              mk_pto nls.first [ SL.Term.as_var t; SL.Term.as_var n ] nls.shared;
+              mk_predicate sort [ t; top; next ] nls.shared;
+              (* shared fields of sublist are not stored for NLS *)
+              mk_predicate next_sort [ n; next ] [];
               SL.mk_distinct [ first; top; t ];
             ]
-          (* ) *)
         in
         match nls.min_len with 0 -> nls_0 | 1 -> nls_1 | _ -> nls_2)
     | IntEq (var, value) ->

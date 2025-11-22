@@ -8,7 +8,14 @@ open Common
     types they represent *)
 
 (** Classification of structs *)
-type struct_type = Sll | Dll | Nl | Struct
+type struct_type =
+  (* next, others *)
+  | Sll of fieldinfo * fieldinfo list
+  (* next, prev, others *)
+  | Dll of fieldinfo * fieldinfo * fieldinfo list
+  (* top, next, others *)
+  | Nl of fieldinfo * fieldinfo * fieldinfo list
+  | Struct of fieldinfo list
 
 (** Classification of struct fields *)
 type field_type = Next | Prev | Top | Other of string | Data
@@ -27,40 +34,43 @@ let get_struct_pointer_fields (structure : compinfo) : fieldinfo list =
   |> List.filter (fun field -> is_relevant_type field.ftype)
 
 let rec get_self_and_sll_fields (structure : compinfo) :
-    fieldinfo list * fieldinfo list =
-  let self_pointers, other_pointers =
+    fieldinfo list * fieldinfo list * fieldinfo list =
+  let self_fields, other =
     structure |> get_struct_pointer_fields
     |> List.partition (fun field ->
-           match Ast_types.unroll_deep_node field.ftype with
-           | TPtr { tnode = TComp target_struct; _ } ->
-               target_struct.ckey = structure.ckey
-           | _ -> false)
+        match Ast_types.unroll_deep_node field.ftype with
+        | TPtr { tnode = TComp target_struct; _ } ->
+            target_struct.ckey = structure.ckey
+        | _ -> false)
   in
-  let sll_pointers =
-    List.filter
+  let sll_fields, other_fields =
+    List.partition
       (fun field ->
         match Ast_types.unroll_deep_node field.ftype with
-        | TPtr { tnode = TComp structure; _ } -> get_struct_type structure = Sll
+        | TPtr { tnode = TComp structure; _ } -> (
+            match get_struct_type structure with Sll _ -> true | _ -> false)
         | _ -> false)
-      other_pointers
+      other
   in
-  (self_pointers, sll_pointers)
+  (self_fields, sll_fields, other_fields)
 
 (** Determines, which list type a structure represents based on its fields *)
 and get_struct_type (structure : compinfo) : struct_type =
-  let self_pointers, sll_pointers = get_self_and_sll_fields structure in
+  let self_fields, sll_fields, other_fields =
+    get_self_and_sll_fields structure
+  in
 
-  match (self_pointers, sll_pointers) with
-  | [ _ ], [] -> Sll
-  | [ _ ], [ _ ] -> Nl
-  | [ _; _ ], [] -> Dll
-  | _ -> Struct
+  match (self_fields, sll_fields) with
+  | [ next ], [] -> Sll (next, other_fields)
+  | [ top ], [ next ] -> Nl (top, next, other_fields)
+  | [ next; prev ], [] -> Dll (next, prev, other_fields)
+  | _ -> Struct (self_fields @ sll_fields @ other_fields)
 
 (** Determines the type of field in the context of lists *)
 let get_field_type (field : fieldinfo) : field_type =
-  let self_pointers, sll_pointers = get_self_and_sll_fields field.fcomp in
+  let self_fields, sll_fields, _ = get_self_and_sll_fields field.fcomp in
 
-  match (self_pointers, sll_pointers) with
+  match (self_fields, sll_fields) with
   (* SLL *)
   | [ next ], [] when field.forder = next.forder -> Next
   (* DLL *)
@@ -83,20 +93,40 @@ let rec get_type_info (typ : typ) : Sort.t * MemoryModel.StructDef.t =
       let result =
         match typ with
         | TPtr { tnode = TComp structure; _ } -> (
+            let name = structure.cname in
+            let sort = Sort.mk_loc name in
+
+            let create_struct self_fields other_fields =
+              let self_fields =
+                List.map
+                  (fun field -> MemoryModel.Field.mk field.fname sort)
+                  self_fields
+              in
+              let other_fields =
+                List.map
+                  (fun field ->
+                    let sort = field.ftype |> get_type_info |> fst in
+                    MemoryModel.Field.mk field.fname sort)
+                  other_fields
+              in
+              ( MemoryModel.StructDef.mk name (self_fields @ other_fields),
+                other_fields )
+            in
+
             match get_struct_type structure with
-            | Sll -> (SL_builtins.loc_ls, dummy_struct_def)
-            | Dll -> (SL_builtins.loc_dls, dummy_struct_def)
-            | Nl -> (SL_builtins.loc_nls, dummy_struct_def)
-            | Struct ->
-                let name = structure.cname in
-                let sort = Sort.mk_loc name in
-                let fields =
-                  structure |> get_struct_pointer_fields
-                  |> List.map (fun field ->
-                         let sort = field.ftype |> get_type_info |> fst in
-                         MemoryModel.Field.mk field.fname sort)
+            | Sll (next, shared) ->
+                let struct_def, shared = create_struct [ next ] shared in
+                List_constructors.register_ls name sort struct_def shared
+            | Dll (next, prev, shared) ->
+                let struct_def, shared = create_struct [ next; prev ] shared in
+                List_constructors.register_dls name sort struct_def shared
+            | Nl (top, next, shared) ->
+                let struct_def, shared =
+                  create_struct [ top ] (next :: shared)
                 in
-                let struct_def = MemoryModel.StructDef.mk name fields in
+                List_constructors.register_nls name sort struct_def shared
+            | Struct shared ->
+                let struct_def, _ = create_struct [] shared in
                 (sort, struct_def))
         | TPtr { tnode = TInt _; _ } ->
             let name = "intptr" in
@@ -122,16 +152,31 @@ let get_struct_def (sort : Sort.t) : MemoryModel.StructDef.t =
   |> Seq.find (fun (s, _) -> sort = s)
   |> Option.get |> snd
 
+let get_list_type (sort : Sort.t) : struct_type =
+  Hashtbl.to_seq type_info
+  |> Seq.find_map (function
+    | TPtr { tnode = TComp structure; _ }, (s, _) when s = sort ->
+        Some (get_struct_type structure)
+    | _ -> None)
+  |> Option.get
+
+let get_next_sort_of_nls (nls_sort : Sort.t) =
+  let struct_def = get_struct_def nls_sort in
+  match MemoryModel.StructDef.get_fields struct_def with
+  | _ :: next :: _ -> MemoryModel0.Field.get_sort next
+  | _ -> assert false
+
 (** Converts the type of a variable into its sort, and creates an SL variable *)
 let varinfo_to_var (varinfo : Cil_types.varinfo) : SL.Variable.t =
-  match varinfo.vname with
-  | name when Ast_types.is_integral varinfo.vtype ->
+  let name = "v_" ^ varinfo.vname in
+  match () with
+  | _ when Ast_types.is_integral varinfo.vtype ->
       SL.Variable.mk name (Sort.mk_bitvector 32)
   | _ when not @@ is_relevant_var varinfo ->
       fail "invalid type in varinfo_to_var: %a" Printer.pp_varinfo varinfo
   | _ ->
       let sort = varinfo.vtype |> get_type_info |> fst in
-      SL.Variable.mk varinfo.vname sort
+      SL.Variable.mk name sort
 
 (** Memoizes list types inside [get_type_info] *)
 let process_types =
