@@ -35,6 +35,7 @@ let call (lhs_sort : SL.Sort.t) (func : Cil_types.varinfo)
       in
       let names = List.map MemoryModel.Field.show fields in
       let vars =
+        (* TODO: initialize int fields to zero, not nil *)
         if init_vars_to_null then List.map (fun _ -> Formula.nil) fields
         else
           List.map MemoryModel.Field.get_sort fields

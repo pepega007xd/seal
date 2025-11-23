@@ -21,7 +21,15 @@ let eq_shared (lhs : Formula.fields) (rhs : Formula.fields)
     (formula : Formula.t) : bool =
   List.for_all2
     (fun (lhs_name, lhs) (rhs_name, rhs) ->
-      Formula.is_eq lhs rhs formula && lhs_name = rhs_name)
+      let value_eq =
+        match
+          ( Formula.get_int_val_opt lhs formula,
+            Formula.get_int_val_opt lhs formula )
+        with
+        | Some lhs, Some rhs -> lhs = rhs
+        | _ -> Formula.is_eq lhs rhs formula
+      in
+      value_eq && lhs_name = rhs_name)
     lhs rhs
 
 (** LS abstraction *)
