@@ -2,6 +2,7 @@
 
 let nondet_var_name = "$nondet"
 let ptr_field_name = "$target"
+let int_field_name = "$int"
 
 let nondet_var =
   Cil.makeVarinfo false false nondet_var_name Cil_const.voidPtrType

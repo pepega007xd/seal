@@ -23,7 +23,13 @@ let convert f =
   let map_atom = function
     | Eq vars -> SL.mk_eq (List.map v vars)
     | Distinct (lhs, rhs) -> SL.mk_distinct2 (v lhs) (v rhs)
-    | Freed var -> SL_builtins.mk_freed (v var)
+    | Freed var ->
+        (* HACK: freed( int* ) doesn't currently work *)
+        if
+          SL.Variable.get_sort var |> Sort.name
+          |> String.starts_with ~prefix:"intptr"
+        then SL.emp
+        else SL_builtins.mk_freed (v var)
     | PointsTo (src, LS_t next, shared) -> mk_pto src [ next ] shared
     | PointsTo (src, DLS_t (next, prev), shared) ->
         mk_pto src [ next; prev ] shared

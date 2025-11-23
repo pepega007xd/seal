@@ -18,7 +18,7 @@ type struct_type =
   | Struct of fieldinfo list
 
 (** Classification of struct fields *)
-type field_type = Next | Prev | Top | Other of string | Data
+type field_type = Next | Prev | Top | Other of string
 
 let pp_typ_node fmt tnode = Cil_printer.pp_typ fmt { tnode; tattr = [] }
 
@@ -29,14 +29,10 @@ let is_relevant_type (typ : typ) : bool =
 
 let is_relevant_var (var : varinfo) = is_relevant_type var.vtype
 
-let get_struct_pointer_fields (structure : compinfo) : fieldinfo list =
-  structure.cfields |> Option.get
-  |> List.filter (fun field -> is_relevant_type field.ftype)
-
 let rec get_self_and_sll_fields (structure : compinfo) :
     fieldinfo list * fieldinfo list * fieldinfo list =
   let self_fields, other =
-    structure |> get_struct_pointer_fields
+    structure.cfields |> Option.get
     |> List.partition (fun field ->
         match Ast_types.unroll_deep_node field.ftype with
         | TPtr { tnode = TComp target_struct; _ } ->
@@ -79,19 +75,19 @@ let get_field_type (field : fieldinfo) : field_type =
   (* NL *)
   | [ top ], [ _ ] when field.forder = top.forder -> Top
   | [ _ ], [ next ] when field.forder = next.forder -> Next
-  | _ -> if is_relevant_type field.ftype then Other field.fname else Data
+  | _ -> Other field.fname
 
 let type_info : (typ_node, Sort.t * MemoryModel.StructDef.t) Hashtbl.t =
   Hashtbl.create 113
 
 let rec get_type_info (typ : typ) : Sort.t * MemoryModel.StructDef.t =
-  let typ = Ast_types.unroll_deep_node typ in
-  Hashtbl.find_opt type_info typ |> function
+  let typ_node = Ast_types.unroll_deep_node typ in
+  Hashtbl.find_opt type_info typ_node |> function
   | Some result -> result
   | None ->
       let dummy_struct_def = MemoryModel.StructDef.mk "dummy_struct_def" [] in
       let result =
-        match typ with
+        match typ_node with
         | TPtr { tnode = TComp structure; _ } -> (
             let name = structure.cname in
             let sort = Sort.mk_loc name in
@@ -129,9 +125,12 @@ let rec get_type_info (typ : typ) : Sort.t * MemoryModel.StructDef.t =
                 let struct_def, _ = create_struct [] shared in
                 (sort, struct_def))
         | TPtr { tnode = TInt _; _ } ->
-            let name = "intptr" in
+            let name = Common.get_unique_name "intptr" in
             let sort = Sort.mk_loc name in
-            let struct_def = MemoryModel.StructDef.mk name [] in
+            let field =
+              MemoryModel0.Field.mk Constants.int_field_name Common.int_sort
+            in
+            let struct_def = MemoryModel.StructDef.mk name [ field ] in
             (sort, struct_def)
         | TPtr inner ->
             let name = Common.get_unique_name "ptr2ptr" in
@@ -142,9 +141,11 @@ let rec get_type_info (typ : typ) : Sort.t * MemoryModel.StructDef.t =
             in
             let struct_def = MemoryModel.StructDef.mk name [ field ] in
             (sort, struct_def)
+        | TInt _ -> (Common.int_sort, dummy_struct_def)
         | _ -> (Sort.loc_nil, dummy_struct_def)
       in
-      if snd result <> dummy_struct_def then Hashtbl.add type_info typ result;
+      if snd result <> dummy_struct_def then
+        Hashtbl.add type_info typ_node result;
       result
 
 let get_struct_def (sort : Sort.t) : MemoryModel.StructDef.t =
@@ -157,6 +158,8 @@ let get_list_type (sort : Sort.t) : struct_type =
   |> Seq.find_map (function
     | TPtr { tnode = TComp structure; _ }, (s, _) when s = sort ->
         Some (get_struct_type structure)
+    (* HACK: returning an empty "Struct" variant for [int*] types *)
+    | TPtr _, (s, _) when s = sort -> Some (Struct [])
     | _ -> None)
   |> Option.get
 
@@ -171,7 +174,7 @@ let varinfo_to_var (varinfo : Cil_types.varinfo) : SL.Variable.t =
   let name = "v_" ^ varinfo.vname in
   match () with
   | _ when Ast_types.is_integral varinfo.vtype ->
-      SL.Variable.mk name (Sort.mk_bitvector 32)
+      SL.Variable.mk name Common.int_sort
   | _ when not @@ is_relevant_var varinfo ->
       fail "invalid type in varinfo_to_var: %a" Printer.pp_varinfo varinfo
   | _ ->

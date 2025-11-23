@@ -59,8 +59,7 @@ let print_type_heuristic_on_field (fmt : Format.formatter)
         | Next -> Some "next"
         | Prev -> Some "prev"
         | Top -> Some "top"
-        | Other field -> Some ("other: " ^ field)
-        | Data -> Some "data")
+        | Other field -> Some ("other: " ^ field))
     | _ -> None
   in
   Option.iter (Format.pp_print_string fmt) result

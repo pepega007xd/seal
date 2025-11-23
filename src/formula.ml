@@ -63,7 +63,6 @@ let report_bug (bug_type : bug_type) =
 type state = t list
 
 let nil = SL.Variable.nil
-let int_sort = Sort.mk_bitvector 32
 
 (* TODO: what sort? does it matter anywhere? *)
 let unknown = SL.Variable.mk "_unknown" Sort.loc_nil
@@ -371,6 +370,10 @@ let remove_spatial_from (src : var) (f : t) : t =
   | Some original_atom -> remove_atom original_atom f
   | None -> f
 
+(* update value associated with key without changing order *)
+let update_assoc key new_value =
+  List.map (fun (k, v) -> if k = key then (k, new_value) else (k, v))
+
 let change_pto_target (src : var) (field : Types.field_type) (new_target : var)
     (f : t) : t =
   let f = make_var_explicit_src src f in
@@ -388,12 +391,9 @@ let change_pto_target (src : var) (field : Types.field_type) (new_target : var)
         PointsTo (src, NLS_t (new_target, next), shared)
     | Other field, PointsTo (src, target, shared)
       when List.mem_assoc field shared ->
-        let shared = List.remove_assoc field shared in
-        PointsTo (src, target, (field, new_target) :: shared)
-    | Next, _ -> fail "AAAAAAAAAA"
+        PointsTo (src, target, update_assoc field new_target shared)
     | _ -> assert false
   in
-  (* let new_shared = List.remove_assoc  *)
   f |> remove_spatial_from src |> add_atom new_pto
 
 let get_spatial_atom_min_length : atom -> int = function

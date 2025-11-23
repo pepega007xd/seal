@@ -6,7 +6,7 @@ let var = Types.varinfo_to_var
 
 let eval_binop (op : binop) (lhs : Formula.var) (rhs : Formula.var)
     (formula : Formula.t) : Formula.t * Formula.var =
-  let fresh_var = SL.Variable.mk_fresh "exp" Formula.int_sort in
+  let fresh_var = SL.Variable.mk_fresh "exp" Common.int_sort in
   match
     (Formula.get_int_val_opt lhs formula, Formula.get_int_val_opt rhs formula)
   with
@@ -60,7 +60,7 @@ let rec eval (formula : Formula.t) (exp : exp) : (Formula.t * Formula.var) list
       [ (formula, Formula.nil) ]
   (* integer constant *)
   | _ when Cil.constFoldToInt exp |> Option.is_some ->
-      let fresh_var = SL.Variable.mk_fresh "int" Formula.int_sort in
+      let fresh_var = SL.Variable.mk_fresh "int" Common.int_sort in
       let value = Cil.constFoldToInt exp |> Option.get |> Z.to_int in
       [ (Formula.update_int_eq fresh_var value formula, fresh_var) ]
   (* other constant - string literal, etc *)
@@ -105,23 +105,17 @@ let rec eval (formula : Formula.t) (exp : exp) : (Formula.t * Formula.var) list
           | Some target -> (formula, target)
           (* regular pointer to integer *)
           | None ->
-              Formula.assert_allocated src formula;
-              (formula, Formula.unknown))
+              ( formula,
+                Formula.get_spatial_target src (Other Constants.int_field_name)
+                  formula ))
         (eval_orig inner)
   (* exp->field *)
   | Lval (Mem inner, Field (field, NoOffset)) ->
       eval_and_materialize inner (fun (formula, var) ->
-          if Types.is_relevant_type field.ftype then
-            let var =
-              Formula.get_spatial_target var
-                (Types.get_field_type field)
-                formula
-            in
-            (formula, var)
-          (* reading from non-pointer field *)
-            else (
-            Formula.assert_allocated var formula;
-            (formula, Formula.unknown)))
+          let var =
+            Formula.get_spatial_target var (Types.get_field_type field) formula
+          in
+          (formula, var))
   | _ -> fail "unsupported expr: %a" Printer.pp_exp exp
 
 let set_value (lhs : lval) (rhs : Formula.var) (formula : Formula.t) :
@@ -149,12 +143,9 @@ let set_value (lhs : lval) (rhs : Formula.var) (formula : Formula.t) :
   (* expr->field = expr; *)
   | Mem lhs, Field (lhs_field, NoOffset) ->
       eval_and_materialize lhs (fun (formula, lhs) ->
-          if Types.is_relevant_type lhs_field.ftype then
-            Transfer.assign_lhs_field lhs
-              (Types.get_field_type lhs_field)
-              rhs formula
-          (* assignment into non-pointer field *)
-            else formula)
+          Transfer.assign_lhs_field lhs
+            (Types.get_field_type lhs_field)
+            rhs formula)
   (* var = expr; *)
   | Var lhs, NoOffset ->
       let lhs = var lhs in

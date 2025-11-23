@@ -21,16 +21,14 @@ let assign_lhs_deref (lhs : Formula.var) (rhs : Formula.var)
       (* stack pointer *)
       assign lhs_target rhs formula |> Formula.update_ref lhs lhs_target
   | None ->
-      (* regular pointer to integer *)
-      Formula.assert_allocated lhs formula;
-      formula
+      Formula.change_pto_target lhs (Other Constants.int_field_name) rhs formula
 
 (** transfer function for function calls *)
 let call (lhs_sort : SL.Sort.t) (func : Cil_types.varinfo)
     (args : Formula.var list) (formula : Formula.t) :
     Formula.t list * Formula.var list =
   let get_allocation (init_vars_to_null : bool) =
-    let lhs = SL.Variable.mk_fresh "func_ret" lhs_sort in
+    let lhs = SL.Variable.mk_fresh "call_ret" lhs_sort in
     let pto =
       let fields =
         Types.get_struct_def lhs_sort |> MemoryModel.StructDef.get_fields

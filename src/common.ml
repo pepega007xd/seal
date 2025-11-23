@@ -7,6 +7,9 @@ open Astral
 (** Astral solver instance *)
 let solver : Solver.solver option ref = ref None
 
+(** Sort used to represent integers *)
+let int_sort = Sort.mk_bitvector 32
+
 let fail message = Self.fatal ~current:true message
 let warning message = Self.warning ~current:true message
 let debug message = Self.warning ~current:true message
