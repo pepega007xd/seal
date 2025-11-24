@@ -1,8 +1,6 @@
 open Cil
 open Cil_types
 open Common
-open Astral
-open Constants
 
 (** This module implements multiple simple preprocessing passes, and serves as
     the entrypoint to preprocessing *)

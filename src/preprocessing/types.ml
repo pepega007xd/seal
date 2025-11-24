@@ -1,7 +1,6 @@
 open Cil
 open Cil_types
 open Astral
-open Constants
 open Common
 
 (** This module implements the analysis of C types that determines, which list

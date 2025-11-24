@@ -19,7 +19,6 @@ let init () =
   let backend = Config.Backend_solver.get () in
   let encoding = Config.Astral_encoding.get () in
 
-  let open SL_builtins in
   let solver =
     Solver.init ~dump_queries ~backend ~encoding ~quantifier_encoding:`Direct
       ~use_builtin_defs:false ~source:"seal" ()

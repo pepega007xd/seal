@@ -1,6 +1,4 @@
 open Astral
-open SL_builtins
-open Astral.Lists
 open Formula
 
 let v = SL.Term.of_var
