@@ -1,4 +1,4 @@
-open Config
+open Options
 open Dataflow2
 open Astral
 open Common
@@ -53,7 +53,7 @@ let main () =
 
      match e with
      | Formula.Bug (bug_type, pos) ->
-         if Config.Svcomp_mode.get () then Witness.write_witness bug_type pos;
+         if Options.Svcomp_mode.get () then Witness.write_witness bug_type pos;
          (* print the type of detected bug *)
          Self.result ~source:pos "%a" Formula.pp_bug_type bug_type
      | e ->

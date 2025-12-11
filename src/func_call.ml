@@ -115,7 +115,7 @@ let func_call (args : Formula.var list) (func : varinfo) (formula : Formula.t)
 
   let result_state = get_result_state func reachable in
 
-  Config.Self.debug ~current:true ~dkey:Printing.func_call
+  Options.Self.debug ~current:true ~dkey:Printing.func_call
     "input formula:\n%a\nreachable subformula:\n%a\nunreachable subformula:\n%a"
     Formula.pp_formula formula Formula.pp_formula reachable Formula.pp_formula
     unreachable;

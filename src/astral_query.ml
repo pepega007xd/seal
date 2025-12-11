@@ -14,10 +14,10 @@ let entl_cache = ref @@ Hashtbl.create 113
 
 let init () =
   let dump_queries =
-    if Config.Dump_queries.get () then `Full "astral_queries" else `None
+    if Options.Dump_queries.get () then `Full "astral_queries" else `None
   in
-  let backend = Config.Backend_solver.get () in
-  let encoding = Config.Astral_encoding.get () in
+  let backend = Options.Backend_solver.get () in
+  let encoding = Options.Astral_encoding.get () in
 
   let solver =
     Solver.init ~dump_queries ~backend ~encoding ~quantifier_encoding:`Direct
@@ -37,7 +37,7 @@ let check_sat (formula : Formula.t) : bool =
         let start = Unix.gettimeofday () in
         let result = Solver.check_sat (Option.get !solver) astral_formula in
         cnt := !cnt + 1;
-        Config.Self.debug ~level:2 "Query (sat) %d: %f -> %b \n" !cnt
+        Options.Self.debug ~level:2 "Query (sat) %d: %f -> %b \n" !cnt
           (Unix.gettimeofday () -. start)
           result;
         solver_time := !solver_time +. Unix.gettimeofday () -. start;
@@ -47,8 +47,8 @@ let check_sat (formula : Formula.t) : bool =
         (false, result)
   in
 
-  if Config.Astral_debug.get () then (
-    Config.Self.debug ~current:true ~dkey:Printing.astral_query
+  if Options.Astral_debug.get () then (
+    Options.Self.debug ~current:true ~dkey:Printing.astral_query
       "SAT id = %s \n Native: %a \n Astral: %a \n RESULT: %b"
       (if cached then "(cached)" else string_of_int @@ Solver.query_id ())
       Formula.pp_formula formula SL.pp astral_formula result;
@@ -81,7 +81,7 @@ let check_entailment (lhs : Formula.state) (rhs : Formula.state) : bool =
           Solver.check_entl (Option.get !solver) astral_lhs astral_rhs
         in
         cnt := !cnt + 1;
-        Config.Self.debug ~level:2 "Query (entl) %d: %f -> %b \n" !cnt
+        Options.Self.debug ~level:2 "Query (entl) %d: %f -> %b \n" !cnt
           (Unix.gettimeofday () -. start)
           result;
         solver_time := !solver_time +. Unix.gettimeofday () -. start;
@@ -91,8 +91,8 @@ let check_entailment (lhs : Formula.state) (rhs : Formula.state) : bool =
         (false, result)
   in
 
-  if Config.Astral_debug.get () then (
-    Config.Self.debug ~current:true ~dkey:Printing.astral_query
+  if Options.Astral_debug.get () then (
+    Options.Self.debug ~current:true ~dkey:Printing.astral_query
       "ENTL id = %s \n\
       \ Native: \n\
       \ LHS: %a \n\

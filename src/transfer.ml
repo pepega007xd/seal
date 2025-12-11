@@ -53,7 +53,7 @@ let call (lhs_sort : SL.Sort.t) (func : Cil_types.varinfo)
     in
 
     let allocation = formula |> Formula.add_atom pto in
-    if Config.Svcomp_mode.get () then ([ allocation ], [ lhs ])
+    if Options.Svcomp_mode.get () then ([ allocation ], [ lhs ])
     else
       ( [
           (* success *)

@@ -1,4 +1,4 @@
-open Config
+open Options
 open Cil_types
 open Common
 open Dataflow2
@@ -36,7 +36,7 @@ let computeFirstPredecessor _ state = state
 (** Removes formulas that are covered by other formulas using entailment *)
 let deduplicate_formulas (state : t) : t =
   let is_covered current to_keep =
-    if Config.Simple_join.get () then
+    if Options.Simple_join.get () then
       List.exists
         (fun formula_to_keep ->
           Astral_query.check_entailment [ current ] [ formula_to_keep ])
@@ -60,7 +60,7 @@ let combinePredecessors _ ~old:(old_state : t) (new_state : t) : t option =
   let joined_state = deduplicate_formulas @@ new_state @ old_state in
 
   let state_changed joined_state old_state =
-    if Config.Simple_join.get () then
+    if Options.Simple_join.get () then
       List.for_all
         (fun joined_formula ->
           List.exists
@@ -163,7 +163,7 @@ let doStmt (stmt : stmt) (_ : t) : t stmtaction =
   match stmt.skind with
   (* stop when reaching the maximum number of loop 
       iterations in underapproximation mode *)
-  | Loop (_, block, _, _, _) when Config.Max_loop_cycles.is_set () -> (
+  | Loop (_, block, _, _, _) when Options.Max_loop_cycles.is_set () -> (
       match Hashtbl.find_opt loop_cycles stmt with
       | Some x when x > 0 ->
           Hashtbl.add loop_cycles stmt (x - 1);
@@ -177,9 +177,9 @@ let doStmt (stmt : stmt) (_ : t) : t stmtaction =
           warning "Skipping loop cycle";
           SDone
       | None ->
-          Hashtbl.add loop_cycles stmt (Config.Max_loop_cycles.get ());
+          Hashtbl.add loop_cycles stmt (Options.Max_loop_cycles.get ());
           SDefault)
-  | Instr instr when Config.Svcomp_mode.get () -> (
+  | Instr instr when Options.Svcomp_mode.get () -> (
       match instr with
       | Call (_, { enode = Lval (Var fn, NoOffset); _ }, _, _) ->
           if List.mem fn.vname [ "reach_error"; "myexit"; "fail"; "exit" ] then
@@ -201,7 +201,7 @@ let doEdge (prev_stmt : stmt) (next_stmt : stmt) (state : t) : t =
 
   let do_abstraction (formula : Formula.t) : Formula.t =
     match next_stmt.skind with
-    | _ when Config.Edge_abstraction.get () ->
+    | _ when Options.Edge_abstraction.get () ->
         formula |> Abstraction.convert_to_ls |> Abstraction.convert_to_dls
         |> Abstraction.convert_to_nls
     | Loop _ ->
@@ -211,7 +211,7 @@ let doEdge (prev_stmt : stmt) (next_stmt : stmt) (state : t) : t =
   in
 
   let deduplicate_states : t -> t =
-    if Config.Edge_deduplication.get () then deduplicate_formulas else Fun.id
+    if Options.Edge_deduplication.get () then deduplicate_formulas else Fun.id
   in
 
   let open Simplification in

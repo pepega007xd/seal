@@ -40,7 +40,6 @@ module Backend_solver = Self.Enum (struct
   type t = AstralConfig.Backend.t
 
   let default = `Bitwuzla
-
   let values = AstralConfig.Backend.values_with_names
 end)
 

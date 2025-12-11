@@ -85,7 +85,7 @@ let mk_nls (first : var) (top : var) (next : var) (min_len : int)
 
 let atom_to_string : atom -> 'a =
   let v var =
-    if Config.Print_sort.get () then
+    if Options.Print_sort.get () then
       let sort = SL.Variable.get_sort var |> SL.Sort.show in
       SL.Variable.show var ^ ":" ^ sort
     else SL.Variable.show var

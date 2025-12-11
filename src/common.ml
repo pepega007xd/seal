@@ -1,4 +1,4 @@
-open Config
+open Options
 open Astral
 
 (** This modules contains functions and variables used by multiple other modules
