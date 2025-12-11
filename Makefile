@@ -14,7 +14,6 @@ verifit:
 	rsync -avz verifit:seal/$(RESULTS_DIR) .
 	$(MAKE) results $(RESULTS_DIR)
 
-
 results:
 	pip install bench/
 	table-generator -x bench/seal-results.xml -o $(RESULTS_DIR) $(RESULTS_DIR)/*.xml.bz2
@@ -35,6 +34,9 @@ ARGS := $(wordlist 3, $(words $(MAKECMDGOALS)), $(MAKECMDGOALS))
 
 run: build
 	ivette -seal -seal-msg-key '*' -seal-svcomp-mode $(ARGS) $(FILE)
+
+run-cmd: build
+	frama-c -seal -seal-svcomp-mode $(ARGS) $(FILE)
 
 build:
 	dune build && dune install
