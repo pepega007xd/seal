@@ -20,7 +20,7 @@ let remove_local_init =
               ChangeTo [ Ast_info.mkassign lval exp location ]
           (* Type var = func(); *)
           | ConsInit (func, params, Plain_func) ->
-              ChangeTo [ Call (Some lval, evar func, params, location) ]
+              ChangeTo [ Call (Some lval, Var func, params, location) ]
           | _ -> fail "Unsupported instruction: %a" Printer.pp_instr instr)
       | _ -> SkipChildren
   end

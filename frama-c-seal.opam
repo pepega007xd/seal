@@ -5,7 +5,7 @@ maintainer: ["Tomas Brablec"]
 depends: [
   "dune" {>= "3.2"}
   "ocaml" {>= "5.1.0"}
-  "frama-c" {= "31.0"}
+  "frama-c" {= "32.0"}
   "astral"
   "sha"
   "uuidm"

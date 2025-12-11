@@ -180,7 +180,7 @@ let interpret_instr (instr : instr) (formula : Formula.t) : Formula.t list =
         (fun (formula, rhs) -> set_value lhs rhs formula)
         (eval rhs)
   (* [var =] func(expr1, expr2, ...); *)
-  | Call (lhs_option, { enode = Lval (Var func, NoOffset); _ }, args, _) -> (
+  | Call (lhs_option, Var func, args, _) -> (
       let lhs_sort =
         Option.map
           (fun lhs -> Cil.typeOfLval lhs |> Types.get_type_info |> fst)

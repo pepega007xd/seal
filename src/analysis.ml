@@ -170,8 +170,8 @@ let doStmt (stmt : stmt) (_ : t) : t stmtaction =
           (* reset counters for all inner loops of the loop we are entering *)
           get_inner_loops block
           |> List.iter (fun key ->
-                 Common.debug "removing loop %a" Printer.pp_stmt key;
-                 Hashtbl.remove loop_cycles key);
+              Common.debug "removing loop %a" Printer.pp_stmt key;
+              Hashtbl.remove loop_cycles key);
           SDefault
       | Some _ ->
           warning "Skipping loop cycle";
@@ -181,7 +181,7 @@ let doStmt (stmt : stmt) (_ : t) : t stmtaction =
           SDefault)
   | Instr instr when Options.Svcomp_mode.get () -> (
       match instr with
-      | Call (_, { enode = Lval (Var fn, NoOffset); _ }, _, _) ->
+      | Call (_, Var fn, _, _) ->
           if List.mem fn.vname [ "reach_error"; "myexit"; "fail"; "exit" ] then
             SDone
           else SDefault
@@ -278,8 +278,8 @@ module Tests = struct
   let%test "join_ls" =
     List.init 3 Fun.id
     |> List.for_all (fun len ->
-           let input = [ [ mk_ls x y' len [] ]; [ mk_ls x z' len [] ] ] in
-           let expected = [ [ mk_ls x y' len [] ] ] in
-           let joined = deduplicate_formulas input in
-           assert_eq_state joined expected)
+        let input = [ [ mk_ls x y' len [] ]; [ mk_ls x z' len [] ] ] in
+        let expected = [ [ mk_ls x y' len [] ] ] in
+        let joined = deduplicate_formulas input in
+        assert_eq_state joined expected)
 end
