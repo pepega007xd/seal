@@ -1,12 +1,11 @@
 open Astral
 
 let mk_shared_vars shared =
-  List.map MemoryModel0.Field.get_sort shared
+  List.map MemoryModel.Field.get_sort shared
   |> List.map (SL.Variable.mk "shared")
 
 let register_ls (name : string) (sort : Sort.t)
-    (struct_def : MemoryModel.StructDef.t) (shared : MemoryModel0.Field.t list)
-    =
+    (struct_def : MemoryModel.StructDef.t) (shared : MemoryModel.Field.t list) =
   let first = SL.Variable.mk "first" sort in
   let next = SL.Variable.mk "next" sort in
   let shared = mk_shared_vars shared in
@@ -37,8 +36,7 @@ let register_ls (name : string) (sort : Sort.t)
   (sort, struct_def)
 
 let register_dls (name : string) (sort : Sort.t)
-    (struct_def : MemoryModel.StructDef.t) (shared : MemoryModel0.Field.t list)
-    =
+    (struct_def : MemoryModel.StructDef.t) (shared : MemoryModel.Field.t list) =
   let first = SL.Variable.mk "first" sort in
   let last = SL.Variable.mk "last" sort in
   let prev = SL.Variable.mk "prev" sort in
@@ -74,12 +72,11 @@ let register_dls (name : string) (sort : Sort.t)
   (sort, struct_def)
 
 let register_nls (name : string) (sort : Sort.t)
-    (struct_def : MemoryModel.StructDef.t) (shared : MemoryModel0.Field.t list)
-    =
+    (struct_def : MemoryModel.StructDef.t) (shared : MemoryModel.Field.t list) =
   (* HACK: [next] field is passed within [shared] because it is non-recursive type *)
   let next_sort, shared =
     match shared with
-    | next :: shared -> (MemoryModel0.Field.get_sort next, shared)
+    | next :: shared -> (MemoryModel.Field.get_sort next, shared)
     | _ -> assert false
   in
   let first = SL.Variable.mk "first" sort in

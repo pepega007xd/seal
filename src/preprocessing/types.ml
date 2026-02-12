@@ -127,7 +127,7 @@ let rec get_type_info (typ : typ) : Sort.t * MemoryModel.StructDef.t =
             let name = Common.get_unique_name "intptr" in
             let sort = Sort.mk_loc name in
             let field =
-              MemoryModel0.Field.mk Constants.int_field_name Common.int_sort
+              MemoryModel.Field.mk Constants.int_field_name Common.int_sort
             in
             let struct_def = MemoryModel.StructDef.mk name [ field ] in
             (sort, struct_def)
@@ -165,7 +165,7 @@ let get_list_type (sort : Sort.t) : struct_type =
 let get_next_sort_of_nls (nls_sort : Sort.t) =
   let struct_def = get_struct_def nls_sort in
   match MemoryModel.StructDef.get_fields struct_def with
-  | _ :: next :: _ -> MemoryModel0.Field.get_sort next
+  | _ :: next :: _ -> MemoryModel.Field.get_sort next
   | _ -> assert false
 
 (** Converts the type of a variable into its sort, and creates an SL variable *)

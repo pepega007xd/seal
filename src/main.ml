@@ -58,7 +58,7 @@ let main () =
          Self.result ~source:pos "%a" Formula.pp_bug_type bug_type
      | e ->
          Common.warning "EXCEPTION: %s" (Printexc.to_string e);
-         if not @@ Config.Catch_exceptions.get () then raise e));
+         if not @@ Options.Catch_exceptions.get () then raise e));
 
   (* dump analysis results *)
   Solver.dump_stats (Option.get !solver);
