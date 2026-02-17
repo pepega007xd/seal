@@ -50,6 +50,7 @@ type t = atom list
 (* Exceptions used to report bugs in the analyzed program *)
 type bug_type =
   | Invalid_memtrack of atom * t
+  | Invalid_memcleanup of atom * t
   | Invalid_deref of var * t
   | Invalid_free of var * t
 
@@ -148,6 +149,9 @@ let pp_bug_type (fmt : Format.formatter) (bug_type : bug_type) =
   match bug_type with
   | Invalid_memtrack (atom, f) ->
       Format.fprintf fmt "Invalid_memtrack: atom '%a' in formula '%a'" pp_atom
+        atom pp_formula f
+  | Invalid_memcleanup (atom, f) ->
+      Format.fprintf fmt "Invalid_memcleanup: atom '%a' in formula '%a'" pp_atom
         atom pp_formula f
   | Invalid_deref (var, f) ->
       Format.fprintf fmt "Invalid_deref: var '%a' in formula '%a'"

@@ -19,12 +19,13 @@ let is_in_formula (src : Formula.var) (dst : Formula.var)
 (* checks that the shared fields have equal values *)
 let eq_shared (lhs : Formula.fields) (rhs : Formula.fields)
     (formula : Formula.t) : bool =
+  (* TODO: should the fields be sorted by name? *)
   List.for_all2
     (fun (lhs_name, lhs) (rhs_name, rhs) ->
       let value_eq =
         match
           ( Formula.get_int_val_opt lhs formula,
-            Formula.get_int_val_opt lhs formula )
+            Formula.get_int_val_opt rhs formula )
         with
         | Some lhs, Some rhs -> lhs = rhs
         | _ -> Formula.is_eq lhs rhs formula

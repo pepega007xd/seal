@@ -41,6 +41,12 @@ class Tool(BaseTool2):
         if run.output.any_line_contains("Invalid_memtrack"):
             return result.RESULT_FALSE_MEMTRACK
 
+        if run.output.any_line_contains("Invalid_memcleanup"):
+            return result.RESULT_FALSE_MEMCLEANUP
+
+        if run.output.any_line_contains("Unknown_result"):
+            return result.RESULT_UNKNOWN
+
         if run.output.any_line_contains("Successful_verification"):
             return result.RESULT_TRUE_PROP
 

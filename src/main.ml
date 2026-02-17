@@ -34,7 +34,7 @@ let run_analysis () =
   List.iter
     (fun formula ->
       Formula.get_spatial_atoms formula |> function
-      | atom :: _ -> Formula.report_bug (Invalid_memtrack (atom, formula))
+      | atom :: _ -> Formula.report_bug (Invalid_memcleanup (atom, formula))
       | _ -> ())
     final_state;
 

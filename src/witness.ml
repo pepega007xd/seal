@@ -41,6 +41,8 @@ let write_witness (bug_type : Formula.bug_type) (pos : Filepath.position) =
     match bug_type with
     | Formula.Invalid_memtrack _ ->
         "CHECK( init(main()), LTL(G valid-memtrack) )"
+    | Formula.Invalid_memcleanup _ ->
+        "CHECK( init(main()), LTL(G valid-memcleanup) )"
     | Formula.Invalid_deref _ -> "CHECK( init(main()), LTL(G valid-deref) )"
     | Formula.Invalid_free _ -> "CHECK( init(main()), LTL(G valid-free) )"
   in
