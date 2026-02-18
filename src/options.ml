@@ -111,3 +111,13 @@ module Print_version = Self.False (struct
   let option_name = "-seal-version"
   let help = "Print version and exit"
 end)
+
+module Astral_convertor = Self.String (struct
+  let option_name = "-seal-astral-convertor"
+  let default = "default"
+  let arg_name = "convertor-name"
+
+  let help =
+    "Select which convertor is used to translate native formula representation \
+     to Astral"
+end)

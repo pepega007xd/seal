@@ -1,6 +1,11 @@
 open Astral
 open Common
 
+module type Convertor_type = sig
+  val convert : Formula.t -> SL.t
+  val convert_state : Formula.state -> SL.t
+end
+
 (** This module implements wrapper functions for Astral's sat and entailment
     queries, with the caching of query results *)
 
@@ -12,7 +17,21 @@ let solver_time = ref 0.0
 let sat_cache = ref @@ Hashtbl.create 113
 let entl_cache = ref @@ Hashtbl.create 113
 
+let convertor =
+  ref
+    (module struct
+      let convert _ = SL.emp
+      let convert_state _ = SL.emp
+    end : Convertor_type)
+
 let init () =
+  (convertor :=
+     match Options.Astral_convertor.get () with
+     | "default" -> (module Astral_convertor : Convertor_type)
+     (* NOTE: add new convertors here *)
+     (* | "cmdline-name" -> (module Module_name : Convertor_type) *)
+     | name -> failwith @@ "unknown convertor module: " ^ name);
+
   let dump_queries =
     if Options.Dump_queries.get () then `Full "astral_queries" else `None
   in
@@ -27,7 +46,8 @@ let init () =
   Freed.register ()
 
 let check_sat (formula : Formula.t) : bool =
-  let astral_formula = Astral_convertor.convert formula in
+  let module Convertor = (val !convertor : Convertor_type) in
+  let astral_formula = Convertor.convert formula in
   let cache_input = Formula.canonicalize formula in
 
   if Options.Astral_debug.get () then (
@@ -63,12 +83,13 @@ let check_sat (formula : Formula.t) : bool =
   result
 
 let check_entailment (lhs : Formula.state) (rhs : Formula.state) : bool =
+  let module Convertor = (val !convertor : Convertor_type) in
   let cache_input =
     (Formula.canonicalize_state lhs, Formula.canonicalize_state rhs)
   in
 
   let astral_lhs, astral_rhs =
-    (Astral_convertor.convert_state lhs, Astral_convertor.convert_state rhs)
+    (Convertor.convert_state lhs, Convertor.convert_state rhs)
   in
   let fresh_vars_lhs = SL.get_vars astral_lhs |> List.filter is_fresh_var in
   let fresh_vars_rhs = SL.get_vars astral_rhs |> List.filter is_fresh_var in
