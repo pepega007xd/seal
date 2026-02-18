@@ -17,20 +17,18 @@ let is_in_formula (src : Formula.var) (dst : Formula.var)
   | None -> false
 
 (* checks that the shared fields have equal values *)
-let eq_shared (lhs : Formula.fields) (rhs : Formula.fields)
-    (formula : Formula.t) : bool =
-  (* TODO: should the fields be sorted by name? *)
-  List.for_all2
+let merge_shared (lhs : Formula.fields) (rhs : Formula.fields)
+    (formula : Formula.t) : Formula.fields =
+  List.map2
     (fun (lhs_name, lhs) (rhs_name, rhs) ->
-      let value_eq =
-        match
-          ( Formula.get_int_val_opt lhs formula,
-            Formula.get_int_val_opt rhs formula )
-        with
-        | Some lhs, Some rhs -> lhs = rhs
-        | _ -> Formula.is_eq lhs rhs formula
-      in
-      value_eq && lhs_name = rhs_name)
+      assert (lhs_name = rhs_name);
+      match
+        ( Formula.get_int_val_opt lhs formula,
+          Formula.get_int_val_opt rhs formula )
+      with
+      | Some lhs_val, Some rhs_val when lhs_val = rhs_val -> (lhs_name, lhs)
+      | _ when Formula.is_eq lhs rhs formula -> (lhs_name, lhs)
+      | _ -> (lhs_name, mk_fresh_var_from lhs))
     lhs rhs
 
 (** LS abstraction *)
@@ -54,18 +52,16 @@ let convert_to_ls (formula : Formula.t) : Formula.t =
            is_in_formula first_ls.first first_ls.next Types.Next formula
            (* middle must be fresh variable, and occur only in these two predicates *)
            && is_unique_fresh first_ls.next formula
-           (* shared fields are equal *)
-           && eq_shared first_ls.shared second_ls.shared formula
            (* src must be different from dst (checked using solver) *)
            && Astral_query.check_inequality first_ls.first second_ls.next
                 formula ->
         let min_length = min 2 (first_ls.min_len + second_ls.min_len) in
+        let shared = merge_shared first_ls.shared second_ls.shared formula in
         formula
         |> Formula.remove_spatial_from first_ls.first
         |> Formula.remove_spatial_from second_ls.first
         |> Formula.add_atom
-           @@ Formula.mk_ls first_ls.first second_ls.next min_length
-                first_ls.shared
+           @@ Formula.mk_ls first_ls.first second_ls.next min_length shared
     | _ -> formula
   in
 
@@ -101,20 +97,19 @@ let convert_to_dls (formula : Formula.t) : Formula.t =
            (* prev and next cannot point back into the list *)
            && (not @@ Formula.is_eq first_dls.first first_dls.prev formula)
            && (not @@ Formula.is_eq second_dls.last second_dls.next formula)
-           (* shared fields are equal *)
-           && eq_shared first_dls.shared second_dls.shared formula
            (* DLS must not be cyclic (checked both forward and backward) *)
            && Astral_query.check_inequality first_dls.first second_dls.next
                 formula
            && Astral_query.check_inequality second_dls.last first_dls.prev
                 formula ->
         let min_length = min 3 (first_dls.min_len + second_dls.min_len) in
+        let shared = merge_shared first_dls.shared second_dls.shared formula in
         formula
         |> Formula.remove_spatial_from first_dls.first
         |> Formula.remove_spatial_from second_dls.first
         |> Formula.add_atom
            @@ Formula.mk_dls first_dls.first second_dls.last first_dls.prev
-                second_dls.next min_length first_dls.shared
+                second_dls.next min_length shared
     | _ -> formula
   in
 
@@ -190,8 +185,6 @@ let convert_to_nls (formula : Formula.t) : Formula.t =
            is_in_formula first_nls.first first_nls.top Types.Top formula
            (* middle must be fresh variable, and occur only in these two predicates *)
            && is_unique_fresh first_nls.top formula
-           (* shared fields are equal *)
-           && eq_shared first_nls.shared second_nls.shared formula
            (* src must be different from dst (checked using solver) *)
            && Astral_query.check_inequality first_nls.first second_nls.top
                 formula -> (
@@ -199,12 +192,15 @@ let convert_to_nls (formula : Formula.t) : Formula.t =
         match join_sublists first_nls.first second_nls.first formula with
         | Some (formula, next) ->
             let min_length = min 2 (first_nls.min_len + second_nls.min_len) in
+            let shared =
+              merge_shared first_nls.shared second_nls.shared formula
+            in
             formula
             |> Formula.remove_spatial_from first_nls.first
             |> Formula.remove_spatial_from second_nls.first
             |> Formula.add_atom
                @@ Formula.mk_nls first_nls.first second_nls.top next min_length
-                    first_nls.shared
+                    shared
         | None -> formula)
     | _ -> formula
   in
