@@ -30,6 +30,12 @@ let check_sat (formula : Formula.t) : bool =
   let astral_formula = Astral_convertor.convert formula in
   let cache_input = Formula.canonicalize formula in
 
+  if Options.Astral_debug.get () then (
+    Options.Self.debug ~current:true ~dkey:Printing.astral_query
+      "SAT \n Native: %a \n Astral: %a" Formula.pp_formula formula SL.pp
+      astral_formula;
+    Async.yield ());
+
   let cached, result =
     match Hashtbl.find_opt !sat_cache cache_input with
     | Some result -> (true, result)
@@ -49,9 +55,9 @@ let check_sat (formula : Formula.t) : bool =
 
   if Options.Astral_debug.get () then (
     Options.Self.debug ~current:true ~dkey:Printing.astral_query
-      "SAT id = %s \n Native: %a \n Astral: %a \n RESULT: %b"
+      "RESULT id = %s %b"
       (if cached then "(cached)" else string_of_int @@ Solver.query_id ())
-      Formula.pp_formula formula SL.pp astral_formula result;
+      result;
     Async.yield ());
 
   result
@@ -71,6 +77,19 @@ let check_entailment (lhs : Formula.state) (rhs : Formula.state) : bool =
       elements @@ diff (of_list fresh_vars_rhs) (of_list fresh_vars_lhs))
   in
   let astral_rhs = SL.mk_exists existential_vars astral_rhs in
+
+  if Options.Astral_debug.get () then (
+    Options.Self.debug ~current:true ~dkey:Printing.astral_query
+      "ENTL \n\
+      \ Native: \n\
+      \ LHS: %a \n\
+      \ RHS: %a \n\
+      \ Astral: \n\
+      \ LHS: %a \n\n\
+      \ RHS: %a \n"
+      Formula.pp_state lhs Formula.pp_state rhs SL.pp astral_lhs SL.pp
+      astral_rhs;
+    Async.yield ());
 
   let cached, result =
     match Hashtbl.find_opt !entl_cache cache_input with
@@ -93,17 +112,9 @@ let check_entailment (lhs : Formula.state) (rhs : Formula.state) : bool =
 
   if Options.Astral_debug.get () then (
     Options.Self.debug ~current:true ~dkey:Printing.astral_query
-      "ENTL id = %s \n\
-      \ Native: \n\
-      \ LHS: %a \n\
-      \ RHS: %a \n\
-      \ Astral: \n\
-      \ LHS: %a \n\n\
-      \ RHS: %a \n\
-      \ RESULT: %b"
+      "RESULT id: %s %b\n      "
       (if cached then "(cached)" else string_of_int @@ Solver.query_id ())
-      Formula.pp_state lhs Formula.pp_state rhs SL.pp astral_lhs SL.pp
-      astral_rhs result;
+      result;
     Async.yield ());
 
   result
