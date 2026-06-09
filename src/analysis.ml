@@ -204,6 +204,7 @@ let doEdge (prev_stmt : stmt) (next_stmt : stmt) (state : t) : t =
     | _ when Options.Edge_abstraction.get () ->
         formula |> Abstraction.convert_to_ls |> Abstraction.convert_to_dls
         |> Abstraction.convert_to_nls
+    (* TODO: run on loop exit *)
     | Loop _ ->
         formula |> Abstraction.convert_to_ls |> Abstraction.convert_to_dls
         |> Abstraction.convert_to_nls

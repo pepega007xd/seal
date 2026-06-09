@@ -102,7 +102,7 @@ let register_nls (name : string) (sort : Sort.t)
                    [
                      SL.mk_distinct [ first; top ];
                      SL.mk_pto_struct first struct_def (t :: n :: shared);
-                     SL.mk_predicate name [ t; top; next ];
+                     SL.mk_predicate name (t :: top :: next :: shared);
                      SL.mk_predicate (Sort.name next_sort) [ n; next ];
                    ]
              | _ -> assert false);
