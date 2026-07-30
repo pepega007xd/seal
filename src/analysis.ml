@@ -135,6 +135,8 @@ let doGuard _ (condition : exp) (state : t) : t guardaction * t guardaction =
   let th = List.filter Astral_query.check_sat th in
   let el = List.filter Astral_query.check_sat el in
 
+  if List.is_empty th && List.is_empty el then failwith "Both branches dead" else ();
+
   Self.debug ~current:true ~dkey:Printing.do_guard
     "state:\n%athen branch:\n%aelse branch:\n%a" Formula.pp_state state
     Formula.pp_state th Formula.pp_state el;
@@ -158,10 +160,10 @@ let get_inner_loops (block : block) =
   !loops
 
 (** Decides whether to stop the analysis *)
-let doStmt (stmt : stmt) (_ : t) : t stmtaction =
+let doStmt_verifier (stmt : stmt) (_ : t) : t stmtaction =
   let loop_cycles = !Func_call.function_context.loop_cycles in
   match stmt.skind with
-  (* stop when reaching the maximum number of loop 
+  (* stop when reaching the maximum number of loop
       iterations in underapproximation mode *)
   | Loop (_, block, _, _, _) when Config.Max_loop_cycles.is_set () -> (
       match Hashtbl.find_opt loop_cycles stmt with
@@ -188,6 +190,36 @@ let doStmt (stmt : stmt) (_ : t) : t stmtaction =
       | _ -> SDefault)
   | _ -> SDefault
 
+let doStmt_validator (stmt : stmt) (state : t) : t stmtaction =
+  let is_first_iteration stmt =
+    try (Hashtbl.find !Func_call.function_context.loop_cycles stmt) == 0
+    with Not_found -> true
+  in
+  match stmt.skind with
+  | Loop _ ->
+    let line = Common.stmt_line stmt in
+    let invariant =
+      match GlobalWitness.get_loop_invariant stmt with
+      | None -> raise @@ Exceptions.MissingInvariant line
+      | Some invariant -> invariant
+    in
+    if is_first_iteration stmt then (
+      Self.debug "Checking invariant %s" (Astral.SL.show invariant.content);
+      if Astral_query.check_entailment' state invariant.content then
+        let _ = Self.debug "Invariant for line %d holds on entry" line in
+        SUse (Astral2Seal.convert invariant.content)
+      else raise @@ Exceptions.NotInvariant (state, invariant)
+    )
+    (* Fixpoint wasn't reached using user-provided invariant *)
+    else raise @@ Exceptions.NotInductive invariant
+  | _ -> SDefault
+
+let doStmt (stmt : stmt) (state : t) : t stmtaction =
+  let doing_validation = not @@ Config.Input_witness.is_default () in
+  if doing_validation
+  then doStmt_validator stmt state
+  else doStmt_verifier stmt state
+
 (* Simplify and deduplicate formulas *)
 let doEdge (prev_stmt : stmt) (next_stmt : stmt) (state : t) : t =
   Async.yield ();
@@ -199,15 +231,17 @@ let doEdge (prev_stmt : stmt) (next_stmt : stmt) (state : t) : t =
     |> List.map Types.varinfo_to_var
   in
 
-  let do_abstraction (formula : Formula.t) : Formula.t =
+  let do_abstraction (formula : Formula.t) : Formula.state =
     match next_stmt.skind with
     | _ when Config.Edge_abstraction.get () ->
         formula |> Abstraction.convert_to_ls |> Abstraction.convert_to_dls
         |> Abstraction.convert_to_nls
+        |> (fun x -> [x])
     | Loop _ ->
         formula |> Abstraction.convert_to_ls |> Abstraction.convert_to_dls
         |> Abstraction.convert_to_nls
-    | _ -> formula
+        |> (fun x -> [x])
+    | _ -> [formula]
   in
 
   let deduplicate_states : t -> t =
@@ -220,7 +254,7 @@ let doEdge (prev_stmt : stmt) (next_stmt : stmt) (state : t) : t =
     |> List.map (convert_vars_to_fresh end_of_scope_locals)
     |> List.map remove_leaks
     |> List.map reduce_equiv_classes
-    |> List.map do_abstraction
+    |> List.concat_map do_abstraction
     |> List.map remove_irrelevant_atoms
     |> List.map remove_empty_lists
     |> Formula.canonicalize_state ~rename_fresh:false

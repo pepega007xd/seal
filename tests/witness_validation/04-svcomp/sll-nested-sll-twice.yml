@@ -1,0 +1,110 @@
+# status: valid
+
+- entry_type: "logic_declarations"
+  content:
+    - predicate:
+        location:
+          line: 21
+        name: "sll_segment"
+        params:
+        - name: start
+          type: "internal_node *"
+        - name: end
+          type: "internal_node *"
+        definition: |
+          "(start == end)
+            || (start != end
+                &*& \canAccess(start, 4)
+                &*& sll_segment(start->next2, end))"
+    - predicate:
+        location:
+          line: 25
+        name: "nll_segment"
+        params:
+        - name: start
+          type: "node *"
+        - name: end
+          type: "node *"
+        - name: sink
+          type: "internal_node *"
+        definition: |
+          "(start == end)
+            || (start != end
+                &*& \canAccess(start, 12)
+                &*& nll_segment(start->next1, end, sink)
+                &*& sll_segment(start->nested1, sink)
+                &*& sll_segment(start->nested2, sink))"
+
+- entry_type: "invariant_set"
+  format_version: "2.2"
+  uuid: "736baf27-5200-4e09-857c-4dbdd20ea554"
+  creation_time: "2026-03-16T20:20:19+01:00"
+  producer:
+    name: "crafted"
+  task:
+    input_files:
+      - "sll-nested-sll-twice.c"
+    input_file_hashes:
+        "./sll-nested-sll-twice.c": "1f3ce34dd02915d5d99267630cc47845673d9f7380667b82239721ac587251c4"
+    specification: "(G valid-memsafety)"
+    data_model: "ILP32"
+    language: "C"
+
+  content:
+    # Create internal
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 50
+        value: |
+          "sll_segment(sll, now) &*& \canAccess(now, 4) &*& now->next2 == NULL"
+        format: "sl_c_expression"
+
+    # Create toplevel
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 64
+        value: |
+          "nll_segment(sll, now, NULL)
+           &*& \canAccess(now, 12)
+           &*& now->next1 == NULL
+           &*& sll_segment(now->nested1, NULL)
+           &*& sll_segment(now->nested2, NULL)"
+        format: "sl_c_expression"
+
+    # Loop internal
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 75
+        value: |
+          "sll_segment(\at(l,Pre), l) &*& sll_segment(l, NULL)"
+        format: "sl_c_expression"
+
+    # Loop
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 83
+        value: |
+          "nll_segment(\at(l,Pre), l, NULL) &*& nll_segment(l, NULL, NULL)"
+        format: "sl_c_expression"
+
+    # Destroy internal
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 93
+        value: |
+          "sll_segment(l, NULL)"
+        format: "sl_c_expression"
+
+    # Destroy
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 102
+        value: |
+          "nll_segment(l, NULL, NULL)"
+        format: "sl_c_expression"

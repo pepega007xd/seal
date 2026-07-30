@@ -23,6 +23,7 @@ type atom =
   | LS of ls
   | DLS of dls
   | NLS of nls
+  | Predicate of string * var list
   | IntEq of var * int
   | Ref of var * var
 
@@ -93,6 +94,8 @@ let atom_to_string : atom -> 'a =
   | NLS nls ->
       Format.sprintf "nls_%d+(%s,%s,%s)" nls.min_len (v nls.first) (v nls.top)
         (v nls.next)
+  | Predicate (name, params) ->
+      Format.sprintf "%s(%s)" name (String.concat "," @@ List.map v params)
   | IntEq (var, value) -> Format.sprintf "(%s = %i)" (v var) value
   | Ref (src, target) -> Format.sprintf "ref(%s,%s)" (v src) (v target)
 
@@ -140,6 +143,7 @@ let get_vars (f : t) : var list =
       | LS ls -> [ ls.first; ls.next ]
       | DLS dls -> [ dls.first; dls.last; dls.prev; dls.next ]
       | NLS nls -> [ nls.first; nls.top; nls.next ]
+      | Predicate (_, params) -> params
       | IntEq (var, _) -> [ var ]
       | Ref (src, target) -> [ src; target ])
     f
@@ -179,6 +183,7 @@ let subsitute_in_atom (old_var : var) (new_var : var) : atom -> atom =
           next = v nls.next;
           min_len = nls.min_len;
         }
+  | Predicate (name, params) -> Predicate (name, List.map v params)
   | IntEq (lhs, value) -> IntEq (v lhs, value)
   | Ref (src, target) -> Ref (v src, v target)
 
@@ -238,7 +243,7 @@ let is_eq (lhs : var) (rhs : var) (f : t) : bool =
 (** Spatial atoms *)
 
 let is_spatial_atom : atom -> bool = function
-  | PointsTo _ | LS _ | DLS _ | NLS _ -> true
+  | PointsTo _ | LS _ | DLS _ | NLS _ | Predicate _ -> true
   | _ -> false
 
 let get_spatial_atoms : t -> t = List.filter is_spatial_atom
@@ -248,6 +253,7 @@ let is_spatial_source (src : var) : atom -> bool = function
   | LS ls -> ls.first = src
   | DLS dls -> dls.first = src || dls.last = src
   | NLS nls -> nls.first = src
+  | Predicate (_, x :: _) -> SL.Variable.equal x src (* TODO: make sure that x is always root *)
   | _ -> false
 
 let is_spatial_source_first (src : var) : atom -> bool = function
@@ -255,6 +261,7 @@ let is_spatial_source_first (src : var) : atom -> bool = function
   | LS ls -> ls.first = src
   | DLS dls -> dls.first = src
   | NLS nls -> nls.first = src
+  | Predicate (_, x :: _) -> SL.Variable.equal x src (* TODO: make sure that x is always root *)
   | _ -> false
 
 let make_var_explicit_src (var : var) (f : t) : t =
@@ -307,6 +314,7 @@ let get_targets_of_atom : atom -> var list = function
   | LS ls -> [ ls.next ]
   | DLS dls -> [ dls.prev; dls.next ]
   | NLS nls -> [ nls.top; nls.next ]
+  | Predicate (_, xs) -> xs
   | _ -> assert false
 
 let is_spatial_target (target : var) (f : t) : bool =
@@ -345,7 +353,10 @@ let change_pto_target (src : var) (field : Types.field_type) (new_target : var)
     | Prev, DLS_t (next, _) -> DLS_t (next, new_target)
     | Top, NLS_t (_, next) -> NLS_t (new_target, next)
     | Other field, Generic vars ->
-        Generic ((field, new_target) :: List.remove_assoc field vars)
+        Generic (List.map (fun ((field', x) as old) ->
+          if String.equal field field' then (field', new_target)
+          else old
+        ) vars)
     | _ -> assert false
   in
   f |> remove_spatial_from src |> add_atom (PointsTo (src, new_struct))
@@ -372,29 +383,26 @@ let pto_to_list : atom -> atom = function
 let add_eq (lhs : var) (rhs : var) (f : t) : t =
   let lhs_class = find_equiv_class lhs f in
   let rhs_class = find_equiv_class rhs f in
-  let has_valid_sort var eq_class =
-    let sort = SL.Variable.get_sort var in
-    List.for_all
-      (fun class_var ->
-        let class_sort = SL.Variable.get_sort class_var in
-        sort = class_sort || class_var = nil)
-      eq_class
+
+  (* Two variables are compatible when they have exactly the same sort.
+     When one of them is nil, we cannot merge their classes. *)
+  let are_compatible =
+    Sort.equal (SL.Variable.get_sort lhs) (SL.Variable.get_sort rhs)
   in
 
   match (lhs_class, rhs_class) with
   (* both variables are already in the same equiv class - do nothing *)
   | Some lhs_class, Some rhs_class when lhs_class = rhs_class -> f
   (* each variable is already in a different equiv class - merge classes *)
-  | Some lhs_class, Some rhs_class
-    when has_valid_sort lhs rhs_class && has_valid_sort rhs lhs_class ->
+  | Some lhs_class, Some rhs_class when are_compatible ->
       f
       |> remove_equiv_class lhs_class
       |> remove_equiv_class rhs_class
       |> add_equiv_class (lhs_class @ rhs_class)
   (* one of the variables is in no existing class - add it to the existing one *)
-  | Some lhs_class, None when has_valid_sort rhs lhs_class ->
+  | Some lhs_class, None when are_compatible ->
       f |> remove_equiv_class lhs_class |> add_equiv_class (rhs :: lhs_class)
-  | None, Some rhs_class when has_valid_sort lhs rhs_class ->
+  | None, Some rhs_class when are_compatible ->
       f |> remove_equiv_class rhs_class |> add_equiv_class (lhs :: rhs_class)
   (* no variable is in an existing class - create a new class *)
   | _ -> f |> add_equiv_class [ lhs; rhs ]
@@ -473,84 +481,6 @@ let update_int_eq (var : var) (value : int) (f : t) : t =
         (function IntEq (v, _) when var = v -> IntEq (v, value) | a -> a)
         f
   | None -> add_atom (IntEq (var, value)) f
-
-(** Materialization *)
-
-(** transforms [formula] so that [var] is a part of a points-to atom, not a list
-    segment, multiple formulas can be produced, representing different lengths
-    of [ls] (1, 2+) *)
-let rec materialize (var : var) (f : t) : t list =
-  let fresh_var = mk_fresh_var_from var in
-  let f = make_var_explicit_src var f in
-  let old_atom = get_spatial_atom_from var f in
-  let f = f |> remove_atom old_atom in
-
-  match old_atom with
-  | PointsTo _ -> [ add_atom old_atom f ]
-  (* ls has minimum length greater than zero -> just decrement and split off PointsTo *)
-  | LS ls when ls.min_len > 0 ->
-      [
-        f
-        |> add_atom (PointsTo (var, LS_t fresh_var))
-        |> add_atom @@ mk_ls fresh_var ls.next (ls.min_len - 1);
-      ]
-  (* ls has minimum length equal to zero -> case split to 0 and 1+ *)
-  | LS ls ->
-      (* case where ls has length 1+ *)
-      (f
-      |> add_atom (PointsTo (var, LS_t fresh_var))
-      |> add_atom @@ mk_ls fresh_var ls.next 0)
-      (* cases where ls has length 0 *)
-      :: (f |> add_eq ls.first ls.next |> materialize var)
-  (* cases where DLS has minimum length of at least one *)
-  | DLS dls when dls.min_len > 0 && var = dls.first ->
-      [
-        f
-        |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev)))
-        |> add_atom @@ mk_dls fresh_var dls.last var dls.next (dls.min_len - 1);
-      ]
-  | DLS dls when dls.min_len > 0 && var = dls.last ->
-      [
-        f
-        |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var)))
-        |> add_atom @@ mk_dls dls.first fresh_var dls.prev var (dls.min_len - 1);
-      ]
-  (* cases where DLS has minimum length of zero -> case split *)
-  | DLS dls when var = dls.first ->
-      (* length 1+ case *)
-      (f
-      |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev)))
-      |> add_atom @@ mk_dls fresh_var dls.last var dls.next 0)
-      (* length 0 cases *)
-      :: (f |> add_eq dls.first dls.next |> add_eq dls.last dls.prev
-        |> materialize var)
-  | DLS dls when var = dls.last ->
-      (f
-      |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var)))
-      |> add_atom @@ mk_dls dls.first fresh_var dls.prev var 0)
-      :: (f |> add_eq dls.first dls.next |> add_eq dls.last dls.prev
-        |> materialize var)
-  (* case where NLS has minimum length of at least one *)
-  | NLS nls when nls.min_len > 0 ->
-      (* materalization of NLS produces a LS_0+ from fresh_var to `nls.next` *)
-      let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
-      [
-        f
-        |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls)))
-        |> add_atom @@ mk_ls fresh_ls nls.next 0
-        |> add_atom @@ mk_nls fresh_var nls.top nls.next (nls.min_len - 1);
-      ]
-  (* case where NLS has minimum length == 0 *)
-  | NLS nls ->
-      let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
-      (* length 1+ case *)
-      (f
-      |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls)))
-      |> add_atom @@ mk_ls fresh_ls nls.next 0
-      |> add_atom @@ mk_nls fresh_var nls.top nls.next 0)
-      (* length 0 cases *)
-      :: (f |> add_eq nls.first nls.top |> materialize var)
-  | _ -> assert false
 
 (** Reachability *)
 

@@ -20,10 +20,10 @@ let print_type_heuristic (fmt : Format.formatter)
     match Ast_types.unroll_deep_node typ with
     | TPtr { tnode = TComp structure; _ } | TComp structure -> (
         match Types.get_struct_type structure with
-        | Sll -> "Singly linked list"
-        | Dll -> "Doubly linked list"
-        | Nl -> "Nested list"
-        | Struct -> "Struct")
+        | Sll _ -> "Singly linked list"
+        | Dll _ -> "Doubly linked list"
+        | Nl _ -> "Nested list"
+        | Struct _ -> "Struct")
     | _ -> Format.asprintf "Non-structure type: %a" Printer.pp_typ typ
   in
   let result =

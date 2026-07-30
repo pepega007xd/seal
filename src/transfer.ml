@@ -25,6 +25,93 @@ let assign_lhs_deref (lhs : Formula.var) (rhs : Formula.var)
       Formula.assert_allocated lhs formula;
       formula
 
+(** Materialization *)
+
+(** transforms [formula] so that [var] is a part of a points-to atom, not a list
+    segment, multiple formulas can be produced, representing different lengths
+    of [ls] (1, 2+) *)
+let rec materialize (var : Formula.var) (f : Formula.t) : Formula.t list =
+  let open Formula in
+  let open Common in
+  let fresh_var = mk_fresh_var_from var in
+  let f = make_var_explicit_src var f in
+  let old_atom = get_spatial_atom_from var f in
+  let f = f |> remove_atom old_atom in
+
+  match old_atom with
+  | PointsTo _ -> [ add_atom old_atom f ]
+  (* ls has minimum length greater than zero -> just decrement and split off PointsTo *)
+  | LS ls when ls.min_len > 0 ->
+      [
+        f
+        |> add_atom (PointsTo (var, LS_t fresh_var))
+        |> add_atom @@ mk_ls fresh_var ls.next (ls.min_len - 1);
+      ]
+  (* ls has minimum length equal to zero -> case split to 0 and 1+ *)
+  | LS ls ->
+      (* case where ls has length 1+ *)
+      (f
+      |> add_atom (PointsTo (var, LS_t fresh_var))
+      |> add_atom @@ mk_ls fresh_var ls.next 0)
+      (* cases where ls has length 0 *)
+      :: (f |> add_eq ls.first ls.next |> materialize var)
+  (* cases where DLS has minimum length of at least one *)
+  | DLS dls when dls.min_len > 0 && var = dls.first ->
+      [
+        f
+        |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev)))
+        |> add_atom @@ mk_dls fresh_var dls.last var dls.next (dls.min_len - 1);
+      ]
+  | DLS dls when dls.min_len > 0 && var = dls.last ->
+      [
+        f
+        |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var)))
+        |> add_atom @@ mk_dls dls.first fresh_var dls.prev var (dls.min_len - 1);
+      ]
+  (* cases where DLS has minimum length of zero -> case split *)
+  | DLS dls when var = dls.first ->
+      (* length 1+ case *)
+      (f
+      |> add_atom (PointsTo (var, DLS_t (fresh_var, dls.prev)))
+      |> add_atom @@ mk_dls fresh_var dls.last var dls.next 0)
+      (* length 0 cases *)
+      :: (f |> add_eq dls.first dls.next |> add_eq dls.last dls.prev
+        |> materialize var)
+  | DLS dls when var = dls.last ->
+      (f
+      |> add_atom (PointsTo (var, DLS_t (dls.next, fresh_var)))
+      |> add_atom @@ mk_dls dls.first fresh_var dls.prev var 0)
+      :: (f |> add_eq dls.first dls.next |> add_eq dls.last dls.prev
+        |> materialize var)
+  (* case where NLS has minimum length of at least one *)
+  | NLS nls when nls.min_len > 0 ->
+      (* materalization of NLS produces a LS_0+ from fresh_var to `nls.next` *)
+      let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
+      [
+        f
+        |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls)))
+        |> add_atom @@ mk_ls fresh_ls nls.next 0
+        |> add_atom @@ mk_nls fresh_var nls.top nls.next (nls.min_len - 1);
+      ]
+  (* case where NLS has minimum length == 0 *)
+  | NLS nls ->
+      let fresh_ls = SL.Variable.mk_fresh "fresh" Sort.loc_ls in
+      (* length 1+ case *)
+      (f
+      |> add_atom (PointsTo (var, NLS_t (fresh_var, fresh_ls)))
+      |> add_atom @@ mk_ls fresh_ls nls.next 0
+      |> add_atom @@ mk_nls fresh_var nls.top nls.next 0)
+      (* length 0 cases *)
+      :: (f |> add_eq nls.first nls.top |> materialize var)
+  | Predicate (name, xs) ->
+    Config.Self.debug "Unfolding predicate %s %S" name (SL.Variable.show_list xs);
+    GlobalSID.cases name (List.map SL.Term.of_var xs)
+    |> List.map (fun case -> SL.mk_star [Astral_query.convert f; case])
+    |> List.map Astral2Seal.convert
+    |> List.map List.hd (* TODO *)
+    |> List.filter Astral_query.check_sat
+  | _ -> assert false
+
 (** transfer function for function calls *)
 let call (lhs_sort : SL.Sort.t) (func : Cil_types.varinfo)
     (args : Formula.var list) (formula : Formula.t) :
@@ -88,7 +175,7 @@ let call (lhs_sort : SL.Sort.t) (func : Cil_types.varinfo)
   (*            |> Formula.add_atom spatial_atom) *)
   | "free", [ src ] -> (
       try
-        formula |> Formula.materialize src
+        formula |> materialize src
         |> List.map (Formula.remove_spatial_from src)
         |> List.map (Formula.add_atom @@ Formula.Freed src)
         |> List.map (fun f -> (f, Formula.nil))
@@ -98,4 +185,8 @@ let call (lhs_sort : SL.Sort.t) (func : Cil_types.varinfo)
           raise @@ Formula.Bug (Invalid_free (var, formula), pos)
       | e -> raise e)
   | "__VERIFIER_nondet_int", _ -> ([ formula ], [ Formula.nondet ])
+  | "__VERIFIER_print_state", _ ->
+      Config.Self.result ~current:true "%a" Formula.pp_formula formula;
+      ([formula], [Formula.nil])
+
   | _, args -> Func_call.func_call args func formula lhs_sort

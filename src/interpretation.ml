@@ -48,7 +48,7 @@ let rec eval (formula : Formula.t) (exp : exp) : (Formula.t * Formula.var) list
     let materialized =
       List.concat_map
         (fun (formula, var) ->
-          Formula.materialize var formula |> List.map (fun f -> (f, var)))
+          Transfer.materialize var formula |> List.map (fun f -> (f, var)))
         inputs
     in
     List.map fn materialized
@@ -134,7 +134,7 @@ let set_value (lhs : lval) (rhs : Formula.var) (formula : Formula.t) :
     let materialized =
       List.concat_map
         (fun (formula, var) ->
-          Formula.materialize var formula |> List.map (fun f -> (f, var)))
+          Transfer.materialize var formula |> List.map (fun f -> (f, var)))
         inputs
     in
     List.map fn materialized

@@ -1,5 +1,4 @@
 open Astral
-open SL_builtins
 open Astral.Lists
 open Formula
 
@@ -7,9 +6,13 @@ open Formula
 let init ~backend ~encoding ~dump_queries () =
   if Config.Input_witness.is_default () then (
     GlobalSID.register_user_defined ls;
+    GlobalSID.register_user_defined ls_two_plus;
     GlobalSID.register_user_defined dls;
+    GlobalSID.register_user_defined dls_three_plus;
     GlobalSID.register_user_defined dls_simple;
+    GlobalSID.register_user_defined dls_simple_two_plus;
     GlobalSID.register_user_defined nls;
+    GlobalSID.register_user_defined nls_two_plus;
   );
   Freed.register ();
 
@@ -46,24 +49,16 @@ let[@warning "-8"] convert f =
         let vars = vars |> List.map snd |> List.map v in
         let struct_def = Types.get_struct_def @@ SL.Variable.get_sort src in
         SL.mk_pto_struct (v src) struct_def vars
+    | Predicate (name, params) -> SL.mk_predicate name (List.map SL.Term.of_var params)
     | LS ls -> (
         let first = v ls.first in
         let next = v ls.next in
 
         let ls_0 = SL_builtins.mk_ls first ~sink:next in
         let ls_1 = SL.mk_star [ ls_0; SL.mk_distinct2 first next ] in
-        let ls_2 =
-          let n = SL.Term.mk_fresh_var "n" loc_ls in
-          (*SL.mk_exists' [loc_ls] (fun [n] ->*)
-          SL.mk_star
-            [
-              SL_builtins.mk_pto_ls first ~next:n;
-              SL.mk_predicate "ls" [ n; next ];
-              SL.mk_distinct [ first; n; next ];
-            ]
-          (* ) *)
-        in
+        let ls_2 = SL.mk_predicate "ls_2plus" [first; next] in
         match ls.min_len with 0 -> ls_0 | 1 -> ls_1 | _ -> ls_2)
+
     | DLS dls when is_unconstrained dls.last f -> (
       (* When the last allocated location in DLS is unconstrained, we
          may use simplified definition of DLS to simplify the formula. *)
@@ -73,18 +68,8 @@ let[@warning "-8"] convert f =
 
       let dls_0 = SL.mk_predicate "dls_simple" [ first; next; prev ] in
       let dls_1 = SL.mk_star [ dls_0; SL.mk_distinct2 first next ] in
-      let dls_2 =
-          let n = SL.Term.mk_fresh_var "n" loc_dls in
-          SL.mk_star
-            [
-              SL_builtins.mk_pto_dls first ~next:n ~prev;
-              SL.mk_predicate "dls_simple" [ n; next; first ];
-              SL.mk_distinct2 n next;
-              SL.mk_distinct2 first next;
-            ]
-        in
-
-        match dls.min_len with
+      let dls_2 = SL.mk_predicate "dls_simple_2plus" [first; next; prev] in
+      match dls.min_len with
         | 0 -> dls_0
         | 1 -> dls_1
         | 2 -> dls_2
@@ -99,19 +84,7 @@ let[@warning "-8"] convert f =
         let dls_0 = SL.mk_predicate "dls" [ first; next; last; prev ] in
         let dls_1 = SL.mk_star [ dls_0; SL.mk_distinct2 first next ] in
         let dls_2 = SL.mk_star [ dls_1; SL.mk_distinct2 first last ] in
-        let dls_3 =
-          let n = SL.Term.mk_fresh_var "n" loc_dls in
-          (*SL.mk_exists' [loc_dls] (fun [n] ->*)
-          SL.mk_star
-            [
-              SL_builtins.mk_pto_dls first ~next:n ~prev;
-              SL.mk_predicate "dls" [ n; next; last; first ];
-              SL.mk_distinct2 n next;
-              SL.mk_distinct2 last first;
-              SL.mk_distinct2 first next;
-            ]
-          (* ) *)
-        in
+        let dls_3 = SL.mk_predicate "dls_3plus" [first; next; last; prev] in
 
         match dls.min_len with
         | 0 -> dls_0
@@ -124,19 +97,7 @@ let[@warning "-8"] convert f =
         let next = v nls.next in
         let nls_0 = SL_builtins.mk_nls first ~sink:top ~bottom:next in
         let nls_1 = SL.mk_star [ nls_0; SL.mk_distinct2 first top ] in
-        let nls_2 =
-          let t = SL.Term.mk_fresh_var "t" loc_nls in
-          let n = SL.Term.mk_fresh_var "n" loc_ls in
-          (*SL.mk_exists' [loc_nls; loc_ls] (fun [t; n] ->*)
-          SL.mk_star
-            [
-              SL_builtins.mk_pto_nls first ~top:t ~next:n;
-              SL.mk_predicate "nls" [ t; top; next ];
-              SL.mk_predicate "ls" [ n; next ];
-              SL.mk_distinct [ first; top; t ];
-            ]
-          (* ) *)
-        in
+        let nls_2 = SL.mk_predicate "nls_2plus" [first; top; next] in
         match nls.min_len with 0 -> nls_0 | 1 -> nls_1 | _ -> nls_2)
     | IntEq (var, value) ->
         SL.mk_eq2 (v var)

@@ -1,38 +1,6 @@
+open Witness_common
+
 let write_witness (bug_type : Formula.bug_type) (pos : Filepath.position) =
-  let time = Unix.time () |> Unix.gmtime in
-  let time =
-    Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02dZ"
-      (time.tm_year + 1900) (* years since 1900 *)
-      (time.tm_mon + 1) (* months 0..11 *)
-      time.tm_mday time.tm_hour time.tm_min time.tm_sec
-  in
-
-  let data_model =
-    match Machine.sizeof_ptr () with
-    | 4 -> "ILP32"
-    | 8 -> "LP64"
-    | _ -> Common.fail "unsupported machdep for sv-witnesses: %s" (Machine.machdep_name ())
-  in
-
-  let architecture =
-    match Machine.sizeof_ptr () with
-    | 4 -> "32bit"
-    | 8 -> "64bit"
-    | _ -> Common.fail "unsupported machdep for sv-witnesses: %s" (Machine.machdep_name ())
-  in
-
-  let filename, filepath =
-    File.get_all () |> function
-    | (File.NeedCPP (path, _, _, _) | File.NoCPP path | External (path, _)) :: _
-      ->
-        (Filepath.basename path, Filepath.to_string_abs path)
-    | _ -> Common.fail "could not find filepath"
-  in
-
-  let file = open_in filepath in
-  let hash = Sha256.input file |> Sha256.to_hex in
-  close_in file;
-
   let specification =
     match bug_type with
     | Formula.Invalid_memtrack _ ->
@@ -41,7 +9,11 @@ let write_witness (bug_type : Formula.bug_type) (pos : Filepath.position) =
     | Formula.Invalid_free _ -> "CHECK( init(main()), LTL(G valid-free) )"
   in
 
-  let uuid = Uuidm.v4_gen (Random.get_state ()) () |> Uuidm.to_string in
+  let uuid = get_uuid () in
+  let time = current_time () in
+  let data_model = get_data_model () in
+  let architecture = get_architecture () in
+  let filepath, hash = List.hd @@ get_files_with_hashes () in
 
   let oc = open_out "witness.yml" in
   Printf.fprintf oc
@@ -69,7 +41,7 @@ let write_witness (bug_type : Formula.bug_type) (pos : Filepath.position) =
     \      language: C\n\
     \      specification: %s\n\
     \    uuid: %s\n"
-    filename pos.pos_lnum time data_model filepath hash filepath specification
+    filepath pos.pos_lnum time data_model filepath hash filepath specification
     uuid;
   close_out oc;
   let oc = open_out "witness.graphml" in

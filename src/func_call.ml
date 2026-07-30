@@ -93,7 +93,7 @@ let func_call (args : Formula.var list) (func : varinfo) (formula : Formula.t)
     let return_var =
       match return_stmt.skind with
       | Return (Some { enode = Lval (Var var, NoOffset); _ }, _) ->
-          SL.Variable.mk var.vname lhs_sort
+          SL.Variable.mk (Common.var_unique_name var) lhs_sort
       | _ -> SL.Variable.mk "dummy" Sort.loc_nil
     in
     ( result

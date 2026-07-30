@@ -64,20 +64,6 @@ let remove_noop_assignments =
       | _ -> SkipChildren
   end
 
-(** Gives every variable a globally unique name *)
-let unique_names (functions : fundec list) =
-  object (self)
-    inherit Visitor.frama_c_inplace
-
-    method! vvrbl (var : varinfo) =
-      let fundec = self#current_func |> Option.get in
-      let other_funcs =
-        List.filter (fun f -> f.svar.vid <> fundec.svar.vid) functions
-      in
-      List.iter (fun f -> refresh_local_name f var) other_funcs;
-      SkipChildren
-  end
-
 (** Removes conditionals that can be statically evaluated *)
 let remove_const_conditions =
   object
@@ -101,15 +87,12 @@ let remove_const_conditions =
 let preprocess () =
   let file = Ast.get () in
 
-  uniqueVarNames file;
-
   let functions =
     List.filter_map
       (function GFun (func, _) -> Some func | _ -> None)
       file.globals
   in
 
-  Visitor.visitFramacFileFunctions (unique_names functions) file;
   Visitor.visitFramacFileFunctions remove_const_conditions file;
   Visitor.visitFramacFileFunctions remove_local_init file;
   Visitor.visitFramacFileFunctions remove_not_operator file;

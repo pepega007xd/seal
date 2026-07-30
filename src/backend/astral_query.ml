@@ -34,6 +34,7 @@ let init () =
       match Config.Astral_mode.get () with
       | `Old -> (module Astral_v1)
       | `New -> (module Astral_v2)
+      | `New2 -> (module Astral_v3)
   in
   let module C = (val !convertor) in
   Common.solver := Some (C.init ~dump_queries ~backend ~encoding ())
@@ -121,3 +122,51 @@ let check_entailment (lhs : Formula.state) (rhs : Formula.state) : bool =
 let check_inequality (lhs : Formula.var) (rhs : Formula.var)
     (formula : Formula.t) : bool =
   formula |> Formula.add_eq lhs rhs |> check_sat |> not
+
+(* Modified entailment checks used by validator *)
+
+let drop_freed =
+  SL.map_view (function
+    | Predicate (name, _, _) when String.equal name "freed" -> `Modify SL.emp
+    | _ -> `Skip
+  )
+
+let check_invariant_aux (lhs : Formula.t) (astral_rhs : SL.t) : bool =
+  let astral_lhs = drop_freed @@ convert lhs in
+
+  let start = Unix.gettimeofday () in
+  let result =
+    Solver.check_entl (Option.get !solver) astral_lhs astral_rhs
+  in
+  cnt := !cnt + 1;
+  Config.Self.debug ~level:2 "Query (entl) %d: %f -> %b \n" !cnt
+    (Unix.gettimeofday () -. start)
+  result;
+  solver_time := !solver_time +. Unix.gettimeofday () -. start;
+  if Config.Astral_debug.get () then (
+    Config.Self.debug ~current:true ~dkey:Printing.astral_query
+      "ENTL id = %s \n\
+      \ Native: \n\
+      \ LHS: %a \n\
+      \ Astral: \n\
+      \ LHS: %a \n\n\
+      \ RHS: %a \n\
+      \ RESULT: %b"
+      "false"
+      Formula.pp_formula lhs SL.pp astral_lhs SL.pp
+      astral_rhs result;
+    Async.yield ());
+
+  result
+
+let check_entailment' (lhs : Formula.state) (astral_rhs : SL.t) : bool =
+  match SL.view astral_rhs with
+  | _ when SL.is_symbolic_heap astral_rhs ->
+    List.for_all (fun f -> check_invariant_aux f astral_rhs) lhs
+  | Or psis when List.for_all SL.is_symbolic_heap psis ->
+    List.for_all (fun l ->
+      List.for_all (fun r ->
+        check_invariant_aux l r
+      ) psis
+    ) lhs
+  | _ -> assert false

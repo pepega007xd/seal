@@ -1,0 +1,61 @@
+# status: invalid
+
+- entry_type: "logic_declarations"
+  content:
+    - predicate:
+        location:
+          line: 7
+        name: "sll_segment"
+        params:
+        - name: start
+          type: "sll *"
+        - name: end
+          type: "sll *"
+        definition: |
+          "(start == end)
+            || (start != end
+                &*& \canAccess(start, 4)
+                &*& sll_segment(start->next, end))"
+
+- entry_type: "invariant_set"
+  format_version: "2.2"
+  uuid: "736baf27-5200-4e09-857c-4dbdd20ea554"
+  creation_time: "2026-03-16T20:20:19+01:00"
+  producer:
+    name: "crafted"
+  task:
+    input_files:
+      - "sll.c"
+    input_file_hashes:
+        "./sll.c": "1f3ce34dd02915d5d99267630cc47845673d9f7380667b82239721ac587251c4"
+    specification: "(G valid-memsafety)"
+    data_model: "ILP32"
+    language: "C"
+
+  content:
+    # Create
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 15
+        value: |
+          "head == NULL"
+        format: "sl_c_expression"
+
+    # Traverse
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 26
+        value: |
+          "sll_segment(\at(list, Pre), list) &*& sll_segment(list, NULL)"
+        format: "sl_c_expression"
+
+    # Destroy
+    - invariant:
+        type: "loop_invariant"
+        location:
+          line: 34
+        value: |
+          "sll_segment(list, NULL)"
+        format: "sl_expression"
